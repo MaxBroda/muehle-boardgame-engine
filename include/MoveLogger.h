@@ -23,8 +23,16 @@ public:
     // Haengt einen ausgefuehrten Zug an die Protokolldatei an.
     bool appendMove(const std::string& path, const Move& move);
 
+    // Liest die Spielernamen aus der Kopfzeile. Liefert false, wenn die Datei
+    // nicht gelesen werden kann.
+    bool readHeader(const std::string& path,
+                    std::string& outWhiteName,
+                    std::string& outBlackName);
+
     // Liest ein vollstaendiges Protokoll ein und legt die Zuege in outMoves ab.
-    // Liefert false, wenn die Datei nicht gelesen werden kann.
+    // Liefert false, wenn die Datei nicht gelesen werden kann. Die Zugart wird
+    // hier nur grob aus der Schreibweise abgeleitet; die endgueltige Pruefung
+    // erfolgt beim erneuten Abspielen ueber Game::replayLogged.
     bool loadGame(const std::string& path, std::vector<Move>& outMoves);
 
     // Speichert einen laufenden Spielstand zum spaeteren Fortsetzen.

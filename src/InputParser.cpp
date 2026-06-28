@@ -27,17 +27,8 @@ std::string normalize(const std::string& text) {
 } // namespace
 
 Field InputParser::parseField(const std::string& text) const {
-    std::string token = normalize(text);
-    // Eine gueltige Koordinate ist genau zwei Zeichen lang (Datei plus Reihe).
-    if (token.size() != 2) {
-        return -1;
-    }
-    for (int i = 0; i < kFieldCount; ++i) {
-        if (token == kFieldNames[static_cast<std::size_t>(i)]) {
-            return i;
-        }
-    }
-    return -1;
+    // Normalisieren (klein, ohne Leerzeichen) und gegen die Feldtabelle pruefen.
+    return fieldIndex(normalize(text));
 }
 
 bool InputParser::parseMove(const std::string& text, Phase phase, Move& out) const {

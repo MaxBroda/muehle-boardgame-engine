@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <string>
 
 // Grundlegende Typen und Konstanten, die im ganzen Projekt verwendet werden.
 // Bewusst klein gehalten: ein paar Aufzaehlungen und Konstanten, mehr braucht
@@ -59,6 +60,25 @@ inline constexpr std::array<const char*, kFieldCount> kFieldNames = {
     "b2", "d2", "f2",              // Reihe 2: mittleres Quadrat unten
     "a1", "d1", "g1"               // Reihe 1: aeusseres Quadrat unten
 };
+
+// Feldindex zu einem exakten Koordinaten-Namen (z.B. "d3"). Liefert -1, wenn
+// kein Feld passt. Erwartet bereits normalisierte (kleingeschriebene) Namen.
+inline Field fieldIndex(const std::string& name) {
+    for (int i = 0; i < kFieldCount; ++i) {
+        if (name == kFieldNames[static_cast<std::size_t>(i)]) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+// Koordinaten-Name zu einem Feldindex. "?" bei ungueltigem Index.
+inline std::string fieldName(Field f) {
+    if (f < 0 || f >= kFieldCount) {
+        return "?";
+    }
+    return kFieldNames[static_cast<std::size_t>(f)];
+}
 
 // Liefert die Gegenfarbe. None bleibt None.
 inline Color opponent(Color c) {

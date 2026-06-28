@@ -21,6 +21,9 @@ public:
     // Der Spieler, der gerade am Zug ist.
     const Player& currentPlayer() const;
 
+    // Lesezugriff auf einen Spieler ueber seine Farbe (z.B. fuer Namen).
+    const Player& playerByColor(Color c) const;
+
     // Prueft einen Zug gegen Brett- und Spielerzustand. Liefert true, wenn der
     // Zug gueltig ist. Bei false steht in "reason" eine Klartextbegruendung.
     // Vollstaendige Regeln folgen in Sprint D.
@@ -29,6 +32,13 @@ public:
     // Fuehrt einen Zug aus. Setzt voraus, dass er gueltig ist. Liefert true bei
     // Erfolg.
     bool applyMove(const Move& m);
+
+    // Spielt einen protokollierten Komplettzug (Aktion und optional ein
+    // entfernter Stein in einem Datensatz) ueber dieselbe Validierung erneut
+    // ab. Die Zugart wird aus der aktuellen Phase rekonstruiert. Liefert false
+    // mit Begruendung, wenn der Datensatz nicht zum Spielzustand passt; so
+    // erkennt das Laden beschaedigte Protokolle.
+    bool replayLogged(const Move& logged, std::string& reason);
 
     // Wurde mit dem letzten Zug eine Muehle geschlossen, sodass jetzt ein
     // gegnerischer Stein zu entfernen ist? Solange das gilt, bleibt derselbe

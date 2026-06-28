@@ -17,6 +17,10 @@ const Player& Game::currentPlayer() const {
     return playerOf(toMove_);
 }
 
+const Player& Game::playerByColor(Color c) const {
+    return playerOf(c);
+}
+
 Player& Game::playerOf(Color c) {
     return (c == Color::White) ? white_ : black_;
 }
@@ -178,6 +182,46 @@ bool Game::applyMove(const Move& m) {
         pendingRemoval_ = true;
     } else {
         switchPlayer();
+    }
+    return true;
+}
+
+bool Game::replayLogged(const Move& logged, std::string& reason) {
+    // Schritt eins: die Aktion. Ihre Art ergibt sich aus der aktuellen Phase,
+    // damit das Protokoll keine Zugart speichern muss und immer konsistent
+    // bleibt.
+    Move action = logged;
+    action.removed = -1;
+    Phase phase = currentPlayer().currentPhase();
+    if (phase == Phase::Placing) {
+        action.type = MoveType::Place;
+        action.from = -1;
+    } else if (phase == Phase::Moving) {
+        action.type = MoveType::Slide;
+    } else {
+        action.type = MoveType::Jump;
+    }
+    if (!validateMove(action, reason)) {
+        return false;
+    }
+    applyMove(action);
+
+    // Schritt zwei: das Entfernen, falls im Datensatz vermerkt. Es muss genau
+    // dann auftreten, wenn der Zug eine Muehle geschlossen hat.
+    if (logged.removed != -1) {
+        if (!needsRemoval()) {
+            reason = "Protokoll: Entfernen ohne geschlossene Muehle.";
+            return false;
+        }
+        Move removal;
+        removal.removed = logged.removed;
+        if (!validateMove(removal, reason)) {
+            return false;
+        }
+        applyMove(removal);
+    } else if (needsRemoval()) {
+        reason = "Protokoll: fehlendes Entfernen nach geschlossener Muehle.";
+        return false;
     }
     return true;
 }

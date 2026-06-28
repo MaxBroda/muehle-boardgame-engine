@@ -1,5 +1,7 @@
 #include "test_framework.h"
 
+#include <cstdio>
+#include <fstream>
 #include <string>
 #include <vector>
 
@@ -7,6 +9,7 @@
 #include "Game.h"
 #include "InputParser.h"
 #include "Move.h"
+#include "MoveLogger.h"
 #include "Player.h"
 
 using namespace muehle;
@@ -489,6 +492,83 @@ TEST(InputParser, ziehUndSpringzugMitZweiFeldern) {
     Move bad;
     ASSERT_FALSE(parser.parseMove("a1a4", Phase::Moving, bad));
     ASSERT_FALSE(parser.parseMove("a1-h9", Phase::Moving, bad));
+}
+
+// --- Sprint F: MoveLogger und Wiederherstellung -----------------------------
+
+// Vergleicht zwei Spiele Feld fuer Feld plus Spieler am Zug.
+static bool sameState(const Game& a, const Game& b) {
+    for (int i = 0; i < kFieldCount; ++i) {
+        if (a.board().colorAt(i) != b.board().colorAt(i)) {
+            return false;
+        }
+    }
+    return a.currentPlayer().color() == b.currentPlayer().color();
+}
+
+// Schreibt einen Text vollstaendig in eine Datei.
+static void writeFile(const std::string& path, const std::string& content) {
+    std::ofstream file(path, std::ios::trunc);
+    file << content;
+}
+
+TEST(MoveLogger, speichernUndWiederherstellenErgibtGleichenZustand) {
+    const std::string path = "/tmp/muehle_test_protocol.txt";
+
+    // Eine kurze Partie mit einer geschlossenen Muehle (Entfernen) spielen.
+    Game original("Anna", "Bert");
+    place(original, "a1");  // W
+    place(original, "a7");  // B
+    place(original, "d1");  // W
+    place(original, "a4");  // B
+    place(original, "g1");  // W schliesst a1-d1-g1
+    removeStone(original, "a7");
+    place(original, "d7");  // B
+    place(original, "c5");  // W
+
+    MoveLogger logger;
+    ASSERT_TRUE(logger.saveSnapshot(path, original));
+
+    // Namen aus der Kopfzeile lesen.
+    std::string white;
+    std::string black;
+    ASSERT_TRUE(logger.readHeader(path, white, black));
+    ASSERT_EQ(white, std::string("Anna"));
+    ASSERT_EQ(black, std::string("Bert"));
+
+    // In ein frisches Spiel laden und Zustand vergleichen.
+    Game restored(white, black);
+    ASSERT_TRUE(logger.loadSnapshot(path, restored));
+    ASSERT_TRUE(sameState(original, restored));
+    ASSERT_EQ(static_cast<int>(restored.history().size()),
+              static_cast<int>(original.history().size()));
+    // Das gefaltete Entfernen ist erhalten geblieben.
+    ASSERT_EQ(restored.history()[4].removed, idx("a7"));
+
+    std::remove(path.c_str());
+}
+
+TEST(MoveLogger, lehntSyntaktischKaputtesProtokollAb) {
+    const std::string path = "/tmp/muehle_test_broken.txt";
+    writeFile(path, "Weiss: A\nSchwarz: B\nzz9\n");
+    MoveLogger logger;
+    std::vector<Move> moves;
+    // Eine unsinnige Koordinate macht das Einlesen ungueltig.
+    ASSERT_FALSE(logger.loadGame(path, moves));
+    std::remove(path.c_str());
+}
+
+TEST(MoveLogger, erkenntRegelwidrigesProtokoll) {
+    const std::string path = "/tmp/muehle_test_illegal.txt";
+    // Syntaktisch in Ordnung, aber zweimal a1: das zweite Setzen ist regelwidrig.
+    writeFile(path, "Weiss: A\nSchwarz: B\na1\na1\n");
+    MoveLogger logger;
+    std::vector<Move> moves;
+    ASSERT_TRUE(logger.loadGame(path, moves));  // Syntax ist gueltig
+    Game game("A", "B");
+    // Beim erneuten Abspielen ueber die zentrale Validierung faellt der Fehler auf.
+    ASSERT_FALSE(logger.loadSnapshot(path, game));
+    std::remove(path.c_str());
 }
 
 int main() {
