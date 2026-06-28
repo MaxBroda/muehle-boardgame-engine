@@ -1,8 +1,11 @@
 #include "test_framework.h"
 
 #include <string>
+#include <vector>
 
 #include "Board.h"
+#include "Game.h"
+#include "Move.h"
 #include "Player.h"
 
 using namespace muehle;
@@ -202,6 +205,240 @@ TEST(Player, springphaseBrauchtNurEinFreiesFeld) {
     Player flying = makePlacedPlayer(Color::White, kFlyingThreshold);
     ASSERT_TRUE(flying.currentPhase() == Phase::Flying);
     ASSERT_TRUE(flying.canMove(board));
+}
+
+// --- Sprint D: Game-Logik ---------------------------------------------------
+
+// Setzt einen Stein und besteht darauf, dass der Zug gueltig war.
+static void place(Game& g, const std::string& field) {
+    Move m;
+    m.type = MoveType::Place;
+    m.to = idx(field);
+    std::string reason;
+    ASSERT_TRUE(g.validateMove(m, reason));
+    ASSERT_TRUE(g.applyMove(m));
+}
+
+// Entfernt einen gegnerischen Stein und besteht auf Gueltigkeit.
+static void removeStone(Game& g, const std::string& field) {
+    Move m;
+    m.removed = idx(field);
+    std::string reason;
+    ASSERT_TRUE(g.validateMove(m, reason));
+    ASSERT_TRUE(g.applyMove(m));
+}
+
+TEST(Game, gueltigerSetzzugWechseltSpieler) {
+    Game game("Weiss", "Schwarz");
+    ASSERT_EQ(game.currentPlayer().color(), Color::White);
+    place(game, "a1");
+    // Nach dem Setzen ist Schwarz am Zug, kein Entfernen offen.
+    ASSERT_FALSE(game.needsRemoval());
+    ASSERT_EQ(game.currentPlayer().color(), Color::Black);
+    ASSERT_EQ(static_cast<int>(game.history().size()), 1);
+}
+
+TEST(Game, ungueltigeSetzzuegeWerdenAbgelehnt) {
+    Game game("Weiss", "Schwarz");
+    std::string reason;
+    // Besetztes Feld.
+    place(game, "a1");        // Weiss auf a1
+    Move onOccupied;
+    onOccupied.type = MoveType::Place;
+    onOccupied.to = idx("a1");
+    ASSERT_FALSE(game.validateMove(onOccupied, reason)); // Schwarz auf a1
+    // Falsches Zielfeld.
+    Move bad;
+    bad.type = MoveType::Place;
+    bad.to = -1;
+    ASSERT_FALSE(game.validateMove(bad, reason));
+    // In der Setzphase darf kein Quellfeld gesetzt sein.
+    Move withFrom;
+    withFrom.type = MoveType::Place;
+    withFrom.from = idx("d1");
+    withFrom.to = idx("d2");
+    ASSERT_FALSE(game.validateMove(withFrom, reason));
+    // Entfernen ohne geschlossene Muehle ist nicht erlaubt.
+    Move earlyRemove;
+    earlyRemove.type = MoveType::Place;
+    earlyRemove.to = idx("g1");
+    earlyRemove.removed = idx("a1");
+    ASSERT_FALSE(game.validateMove(earlyRemove, reason));
+}
+
+TEST(Game, geschlosseneMuehleVerlangtEntfernen) {
+    Game game("Weiss", "Schwarz");
+    // Weiss baut die Reihe a1-d1-g1, Schwarz setzt daneben.
+    place(game, "a1");  // W
+    place(game, "a7");  // B
+    place(game, "d1");  // W
+    place(game, "a4");  // B
+    place(game, "g1");  // W schliesst Muehle a1-d1-g1
+    // Jetzt muss Weiss einen Stein entfernen und bleibt am Zug.
+    ASSERT_TRUE(game.needsRemoval());
+    ASSERT_EQ(game.currentPlayer().color(), Color::White);
+    // Schwarz hat keine Muehle, also sind beide Steine entfernbar.
+    ASSERT_EQ(static_cast<int>(game.removableStones().size()), 2);
+    removeStone(game, "a7");
+    // Nach dem Entfernen ist Schwarz am Zug, der Stein ist weg.
+    ASSERT_FALSE(game.needsRemoval());
+    ASSERT_EQ(game.currentPlayer().color(), Color::Black);
+    ASSERT_EQ(game.board().colorAt(idx("a7")), Color::None);
+    // Das Entfernen wurde im selben Journal-Eintrag vermerkt (eine Zeile pro Zug).
+    ASSERT_EQ(game.history().back().removed, idx("a7"));
+}
+
+TEST(Game, schutzregelSchuetztSteineInMuehle) {
+    // Szenario von Hand gefuehrt, damit am Ende gilt: Schwarz hat eine
+    // vollstaendige Muehle (geschuetzt) und zwei Steine ausserhalb (entfernbar),
+    // waehrend Weiss frisch eine Muehle schliesst.
+    Game game("Weiss", "Schwarz");
+    place(game, "a4");  // W
+    place(game, "a7");  // B
+    place(game, "b4");  // W
+    place(game, "d7");  // B
+    place(game, "c4");  // W schliesst Muehle a4-b4-c4
+    removeStone(game, "a7");  // Weiss entfernt einen freien schwarzen Stein
+    place(game, "g7");  // B
+    place(game, "e3");  // W (Fueller)
+    place(game, "a7");  // B schliesst Muehle a7-d7-g7
+    removeStone(game, "e3");  // Schwarz darf nur den freien weissen Stein nehmen
+    place(game, "e4");  // W
+    place(game, "b6");  // B (frei, neben der Muehle)
+    place(game, "f4");  // W
+    place(game, "f6");  // B (frei)
+    place(game, "g4");  // W schliesst Muehle e4-f4-g4
+
+    ASSERT_TRUE(game.needsRemoval());
+    // Schwarz: a7,d7,g7 in einer Muehle (geschuetzt), b6 und f6 frei.
+    std::vector<Field> targets = game.removableStones();
+    ASSERT_EQ(static_cast<int>(targets.size()), 2);
+    std::string reason;
+    // Ein geschuetzter Stein darf nicht entfernt werden.
+    Move protectedHit;
+    protectedHit.removed = idx("d7");
+    ASSERT_FALSE(game.validateMove(protectedHit, reason));
+    // Ein freier Stein schon.
+    Move freeHit;
+    freeHit.removed = idx("b6");
+    ASSERT_TRUE(game.validateMove(freeHit, reason));
+}
+
+// Spielt eine bewusst muehlenfreie Eroeffnung: 9 weisse und 9 schwarze Steine
+// abwechselnd, sodass keine einzige Muehle entsteht und kein Entfernen anfaellt.
+// Danach sind beide Spieler in der Ziehphase, Weiss ist am Zug.
+static void playMillFreeOpening(Game& game) {
+    const char* order[] = {
+        "a7", "d7", "g7", "a4", "a1", "g4", "g1", "d1", "d6",
+        "b6", "c5", "f6", "e5", "c4", "b2", "e4", "f4", "d2"
+    };
+    for (const char* field : order) {
+        place(game, field);
+        ASSERT_FALSE(game.needsRemoval());
+    }
+}
+
+TEST(Game, ziehphaseErzwingtBenachbartesZielfeld) {
+    Game game("Weiss", "Schwarz");
+    playMillFreeOpening(game);
+    ASSERT_TRUE(game.currentPlayer().currentPhase() == Phase::Moving);
+
+    std::string reason;
+    // Gueltig: e5 nach d5 (benachbart, d5 frei).
+    Move slide;
+    slide.type = MoveType::Slide;
+    slide.from = idx("e5");
+    slide.to = idx("d5");
+    ASSERT_TRUE(game.validateMove(slide, reason));
+
+    // Ungueltig: nicht benachbart.
+    Move far;
+    far.type = MoveType::Slide;
+    far.from = idx("e5");
+    far.to = idx("a7");
+    ASSERT_FALSE(game.validateMove(far, reason));
+
+    // Ungueltig: Zielfeld belegt.
+    Move occupied;
+    occupied.type = MoveType::Slide;
+    occupied.from = idx("e5");
+    occupied.to = idx("e4");
+    ASSERT_FALSE(game.validateMove(occupied, reason));
+
+    // Ungueltig: in der Ziehphase kein Setzzug.
+    Move place;
+    place.type = MoveType::Place;
+    place.to = idx("d5");
+    ASSERT_FALSE(game.validateMove(place, reason));
+}
+
+// Listet alle zur aktuellen Phase passenden, gueltigen Zuege (ohne Entfernen).
+static std::vector<Move> legalActions(const Game& g) {
+    std::vector<Move> out;
+    const Board& b = g.board();
+    Color c = g.currentPlayer().color();
+    Phase ph = g.currentPlayer().currentPhase();
+    std::string reason;
+    if (ph == Phase::Placing) {
+        for (int t = 0; t < kFieldCount; ++t) {
+            Move m;
+            m.type = MoveType::Place;
+            m.to = t;
+            if (g.validateMove(m, reason)) out.push_back(m);
+        }
+    } else {
+        MoveType type = (ph == Phase::Moving) ? MoveType::Slide : MoveType::Jump;
+        for (int f = 0; f < kFieldCount; ++f) {
+            if (b.colorAt(f) != c) continue;
+            for (int t = 0; t < kFieldCount; ++t) {
+                Move m;
+                m.type = type;
+                m.from = f;
+                m.to = t;
+                if (g.validateMove(m, reason)) out.push_back(m);
+            }
+        }
+    }
+    return out;
+}
+
+TEST(Game, vollstaendigePartieEndetMitGewinner) {
+    // End-to-End: eine deterministische Partie, in der beide Seiten bevorzugt
+    // Muehlen schliessen. So fallen Steine, bis ein Spieler unter drei Steine
+    // geraet oder keinen Zug mehr hat. Sichert Spielende und Gewinner ab.
+    Game game("Weiss", "Schwarz");
+    int ply = 0;
+    const int kMaxPly = 3000;
+    while (!game.isGameOver() && ply < kMaxPly) {
+        if (game.needsRemoval()) {
+            // Immer den ersten erlaubten gegnerischen Stein nehmen.
+            std::vector<Field> targets = game.removableStones();
+            ASSERT_FALSE(targets.empty());
+            Move r;
+            r.removed = targets.front();
+            ASSERT_TRUE(game.applyMove(r));
+            ++ply;
+            continue;
+        }
+        std::vector<Move> actions = legalActions(game);
+        ASSERT_FALSE(actions.empty());
+        // Bevorzugt einen Zug, der eine Muehle schliesst (per Probekopie erkannt).
+        Move chosen = actions.front();
+        for (const Move& cand : actions) {
+            Game probe = game;
+            probe.applyMove(cand);
+            if (probe.needsRemoval()) {
+                chosen = cand;
+                break;
+            }
+        }
+        ASSERT_TRUE(game.applyMove(chosen));
+        ++ply;
+    }
+    ASSERT_TRUE(game.isGameOver());
+    ASSERT_FALSE(game.winner() == Color::None);
+    // Der Verlierer ist der Spieler am Zug: zu wenige Steine oder kein Zug.
+    ASSERT_TRUE(game.winner() == opponent(game.currentPlayer().color()));
 }
 
 int main() {

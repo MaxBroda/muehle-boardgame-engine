@@ -31,8 +31,14 @@ public:
     bool applyMove(const Move& m);
 
     // Wurde mit dem letzten Zug eine Muehle geschlossen, sodass jetzt ein
-    // gegnerischer Stein zu entfernen ist?
+    // gegnerischer Stein zu entfernen ist? Solange das gilt, bleibt derselbe
+    // Spieler am Zug und muss als naechstes ein Entfernen einreichen.
     bool needsRemoval() const;
+
+    // Die gegnerischen Steine, die aktuell legal entfernt werden duerfen
+    // (Schutzregel beruecksichtigt). Nur waehrend needsRemoval() gefuellt,
+    // sonst leer. Dient der Eingabeaufforderung und dem Hinweis-Modus.
+    std::vector<Field> removableStones() const;
 
     // Ist die Partie beendet?
     bool isGameOver() const;
@@ -47,6 +53,18 @@ public:
     const Board& board() const;
 
 private:
+    // Schreibzugriff auf einen Spieler ueber seine Farbe.
+    Player& playerOf(Color c);
+    const Player& playerOf(Color c) const;
+
+    // Die gegnerischen Steine des Eigentuemers "owner", die nach der
+    // Schutzregel entfernt werden duerfen: alle Steine ausserhalb einer Muehle;
+    // sind alle Steine in Muehlen, sind ausnahmsweise alle entfernbar.
+    std::vector<Field> removableTargets(Color owner) const;
+
+    // Wechselt den Spieler am Zug.
+    void switchPlayer();
+
     Board board_;
     Player white_;
     Player black_;
