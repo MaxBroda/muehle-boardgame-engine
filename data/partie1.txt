@@ -1,7 +1,0 @@
-# Muehle-Protokoll. Eine Zeile pro Zug: Feld zum Setzen (z.B. d3)
-# oder Zug von-nach (z.B. a1-a4); ein entfernter Stein folgt nach 'x'.
-Weiss: Anna
-Schwarz: Bert
-c5
-c3
-d5
