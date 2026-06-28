@@ -5,6 +5,7 @@
 
 #include "Board.h"
 #include "Game.h"
+#include "InputParser.h"
 #include "Move.h"
 #include "Player.h"
 
@@ -439,6 +440,55 @@ TEST(Game, vollstaendigePartieEndetMitGewinner) {
     ASSERT_FALSE(game.winner() == Color::None);
     // Der Verlierer ist der Spieler am Zug: zu wenige Steine oder kein Zug.
     ASSERT_TRUE(game.winner() == opponent(game.currentPlayer().color()));
+}
+
+// --- Sprint E: InputParser --------------------------------------------------
+
+TEST(InputParser, erkenntGueltigeFelder) {
+    InputParser parser;
+    ASSERT_EQ(parser.parseField("a1"), idx("a1"));
+    ASSERT_EQ(parser.parseField("d3"), idx("d3"));
+    ASSERT_EQ(parser.parseField("g7"), idx("g7"));
+    // Gross- und Kleinschreibung sowie Leerzeichen sind egal.
+    ASSERT_EQ(parser.parseField("  D3 "), idx("d3"));
+}
+
+TEST(InputParser, lehntUngueltigeFelderAb) {
+    InputParser parser;
+    ASSERT_EQ(parser.parseField("h1"), -1);   // Datei h gibt es nicht
+    ASSERT_EQ(parser.parseField("a2"), -1);   // a2 ist kein Spielfeld
+    ASSERT_EQ(parser.parseField("d8"), -1);   // Reihe 8 gibt es nicht
+    ASSERT_EQ(parser.parseField("ddd"), -1);  // falsche Laenge
+    ASSERT_EQ(parser.parseField(""), -1);
+}
+
+TEST(InputParser, setzzugInSetzphase) {
+    InputParser parser;
+    Move m;
+    ASSERT_TRUE(parser.parseMove("d3", Phase::Placing, m));
+    ASSERT_TRUE(m.type == MoveType::Place);
+    ASSERT_EQ(m.to, idx("d3"));
+    ASSERT_EQ(m.from, -1);
+    // Ein Bindestrich-Zug ist in der Setzphase syntaktisch falsch.
+    ASSERT_FALSE(parser.parseMove("a1-a4", Phase::Placing, m));
+}
+
+TEST(InputParser, ziehUndSpringzugMitZweiFeldern) {
+    InputParser parser;
+    Move slide;
+    ASSERT_TRUE(parser.parseMove("a1-a4", Phase::Moving, slide));
+    ASSERT_TRUE(slide.type == MoveType::Slide);
+    ASSERT_EQ(slide.from, idx("a1"));
+    ASSERT_EQ(slide.to, idx("a4"));
+
+    Move jump;
+    ASSERT_TRUE(parser.parseMove("a1-g7", Phase::Flying, jump));
+    ASSERT_TRUE(jump.type == MoveType::Jump);
+
+    // Fehlende Trennung oder ungueltiges Feld.
+    Move bad;
+    ASSERT_FALSE(parser.parseMove("a1a4", Phase::Moving, bad));
+    ASSERT_FALSE(parser.parseMove("a1-h9", Phase::Moving, bad));
 }
 
 int main() {
