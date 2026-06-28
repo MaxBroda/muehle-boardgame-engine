@@ -8,8 +8,7 @@ class Board;
 
 // Die einzige Komponente mit Konsolen-Interaktion. Sie zeichnet das Brett,
 // zeigt Menue und Meldungen und liest Eingaben. Damit bleibt die uebrige
-// Spiellogik frei von Ein- und Ausgabe und gut testbar. Das ASCII-Brett mit
-// Farben folgt in Sprint E.
+// Spiellogik frei von Ein- und Ausgabe und gut testbar.
 class ConsoleRenderer {
 public:
     // Zeichnet das aktuelle Brett.

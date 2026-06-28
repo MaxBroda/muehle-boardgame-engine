@@ -26,7 +26,8 @@ public:
 
     // Prueft einen Zug gegen Brett- und Spielerzustand. Liefert true, wenn der
     // Zug gueltig ist. Bei false steht in "reason" eine Klartextbegruendung.
-    // Vollstaendige Regeln folgen in Sprint D.
+    // Dies ist die einzige Stelle, an der Regeln geprueft werden; Spiel, Laden
+    // und Wiedergabe nutzen sie gemeinsam.
     bool validateMove(const Move& m, std::string& reason) const;
 
     // Fuehrt einen Zug aus. Setzt voraus, dass er gueltig ist. Liefert true bei

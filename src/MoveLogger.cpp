@@ -73,6 +73,11 @@ bool parseMoveLine(const std::string& line, Move& out) {
             return false;
         }
     }
+    // Nach einem vollstaendigen Zug darf nichts mehr folgen.
+    std::string extra;
+    if (stream >> extra) {
+        return false;
+    }
     return true;
 }
 
@@ -119,15 +124,20 @@ bool MoveLogger::readHeader(const std::string& path,
         return false;
     }
     std::string line;
+    bool foundWhite = false;
+    bool foundBlack = false;
     while (std::getline(file, line)) {
         std::string trimmed = trim(line);
         if (trimmed.rfind(kWhiteKey, 0) == 0) {
             outWhiteName = trim(trimmed.substr(std::string(kWhiteKey).size()));
+            foundWhite = !outWhiteName.empty();
         } else if (trimmed.rfind(kBlackKey, 0) == 0) {
             outBlackName = trim(trimmed.substr(std::string(kBlackKey).size()));
+            foundBlack = !outBlackName.empty();
         }
     }
-    return true;
+    // Nur erfolgreich, wenn beide Namen tatsaechlich vorhanden waren.
+    return foundWhite && foundBlack;
 }
 
 bool MoveLogger::loadGame(const std::string& path, std::vector<Move>& outMoves) {

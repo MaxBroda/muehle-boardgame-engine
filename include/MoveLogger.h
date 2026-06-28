@@ -11,8 +11,7 @@ class Game; // fuer Snapshot-Funktionen
 
 // Liest und schreibt Spielprotokolle als lesbare Textdatei (eine Zeile pro
 // Zug). Dieselbe Komponente wird sowohl beim Speichern waehrend des Spiels als
-// auch beim Laden und bei der Wiedergabe verwendet. Die eigentliche
-// Datei-Logik folgt in Sprint F.
+// auch beim Laden und bei der Wiedergabe verwendet.
 class MoveLogger {
 public:
     // Schreibt eine Kopfzeile mit den Spielernamen an den Anfang der Datei.

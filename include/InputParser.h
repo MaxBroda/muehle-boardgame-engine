@@ -9,7 +9,7 @@ namespace muehle {
 
 // Wandelt textuelle Benutzereingaben in Datenstrukturen um und prueft dabei nur
 // die Syntax, nicht die Spielregeln. Die Regelpruefung bleibt allein Aufgabe
-// der Game-Klasse. Die eigentliche Parser-Logik folgt in Sprint E.
+// der Game-Klasse.
 class InputParser {
 public:
     // Wandelt eine Feldnotation wie "d3" in einen Feldindex 0..23 um.

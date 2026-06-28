@@ -571,6 +571,27 @@ TEST(MoveLogger, erkenntRegelwidrigesProtokoll) {
     std::remove(path.c_str());
 }
 
+TEST(MoveLogger, lehntZeileMitUeberfluessigenTokensAb) {
+    const std::string path = "/tmp/muehle_test_extra.txt";
+    // Nach einem vollstaendigen Zug (inkl. Entfernen) darf nichts mehr folgen.
+    writeFile(path, "Weiss: A\nSchwarz: B\na1-a4 x g7 foo\n");
+    MoveLogger logger;
+    std::vector<Move> moves;
+    ASSERT_FALSE(logger.loadGame(path, moves));
+    std::remove(path.c_str());
+}
+
+TEST(MoveLogger, kopfzeileOhneBeideNamenIstUngueltig) {
+    const std::string path = "/tmp/muehle_test_header.txt";
+    // Nur ein Spielername vorhanden: die Kopfzeile gilt als unvollstaendig.
+    writeFile(path, "Weiss: A\n");
+    MoveLogger logger;
+    std::string white;
+    std::string black;
+    ASSERT_FALSE(logger.readHeader(path, white, black));
+    std::remove(path.c_str());
+}
+
 int main() {
     return ::testing::runAll();
 }

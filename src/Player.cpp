@@ -34,8 +34,10 @@ Phase Player::currentPhase() const {
     if (stonesInHand_ > 0) {
         return Phase::Placing;
     }
-    // Mit genau drei Steinen auf dem Brett darf gesprungen werden.
-    if (stonesOnBoard_ <= kFlyingThreshold) {
+    // Mit genau drei Steinen auf dem Brett darf gesprungen werden. Weniger als
+    // drei kann hier nicht auftreten: bei zwei Steinen ist die Partie vorbei
+    // (siehe Game::isGameOver), bevor erneut nach der Phase gefragt wird.
+    if (stonesOnBoard_ == kFlyingThreshold) {
         return Phase::Flying;
     }
     return Phase::Moving;

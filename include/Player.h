@@ -27,7 +27,6 @@ public:
     bool hasStonesInHand() const;
 
     // Gibt es fuer den Spieler ueberhaupt noch einen gueltigen Zug?
-    // Vollstaendige Logik folgt in Sprint C/D.
     bool canMove(const Board& board) const;
 
     // Buchhaltung der Steine. Wird von der Game-Klasse aufgerufen, wenn ein
