@@ -9,8 +9,8 @@ namespace muehle {
 
 // Das Spielfeld. Haelt die Belegung der 24 Felder und bietet die elementaren
 // Operationen darauf. Die Brett-Topologie (welche Felder benachbart sind und
-// welche 16 Linien eine Muehle bilden) wird in Sprint B als statische Tabelle
-// ergaenzt; die zugehoerigen Methoden sind hier bereits deklariert.
+// welche 16 Linien eine Muehle bilden) liegt als statische Tabelle in der
+// Implementierung; sie haengt nur von der Feld-Nummerierung in Types.h ab.
 class Board {
 public:
     // Legt ein leeres Brett an.
@@ -34,11 +34,15 @@ public:
     // Verschiebt einen Stein von einem Feld auf ein anderes.
     void moveStone(Field from, Field to);
 
-    // Sind zwei Felder direkt benachbart? (Sprint B)
+    // Sind zwei Felder direkt benachbart?
     bool areAdjacent(Field a, Field b) const;
 
-    // Bildet das Feld f zusammen mit zwei weiteren Steinen der Farbe c
-    // eine Muehle? (Sprint B)
+    // Die direkt benachbarten Felder von f (zwischen zwei und vier Stueck).
+    // Leer, wenn f kein gueltiges Feld ist.
+    std::vector<Field> neighbors(Field f) const;
+
+    // Liegt das Feld f in einer vollstaendigen Muehle der Farbe c, gehoert also
+    // zu einer der 16 Linien, auf der alle drei Felder mit c belegt sind?
     bool formsMill(Field f, Color c) const;
 
     // Alle aktuell freien Felder.

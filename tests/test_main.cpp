@@ -1,5 +1,7 @@
 #include "test_framework.h"
 
+#include <string>
+
 #include "Board.h"
 #include "Player.h"
 
@@ -31,6 +33,96 @@ TEST(Board, setztUndEntferntStein) {
     board.removeStone(5);
     ASSERT_TRUE(board.isEmpty(5));
     ASSERT_EQ(board.stoneCount(Color::White), 0);
+}
+
+// --- Sprint B: Brett-Topologie ----------------------------------------------
+
+// Hilfsfunktion: Index eines Feldes ueber seinen Koordinaten-Namen finden.
+// Macht die Tests lesbar (areAdjacent(idx("a1"), idx("a4")) statt roher Zahlen).
+static Field idx(const std::string& name) {
+    for (int i = 0; i < kFieldCount; ++i) {
+        if (name == kFieldNames[static_cast<std::size_t>(i)]) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+TEST(Board, benachbarteFelderWerdenErkannt) {
+    Board board;
+    // Kante des aeusseren Quadrats und eine Speiche.
+    ASSERT_TRUE(board.areAdjacent(idx("a1"), idx("a4")));
+    ASSERT_TRUE(board.areAdjacent(idx("a1"), idx("d1")));
+    // Kreuzungspunkt d2 hat vier Nachbarn.
+    ASSERT_TRUE(board.areAdjacent(idx("d2"), idx("d1")));
+    ASSERT_TRUE(board.areAdjacent(idx("d2"), idx("d3")));
+    ASSERT_TRUE(board.areAdjacent(idx("d2"), idx("b2")));
+    ASSERT_TRUE(board.areAdjacent(idx("d2"), idx("f2")));
+}
+
+TEST(Board, nichtBenachbarteFelderWerdenAbgelehnt) {
+    Board board;
+    // Die Ecken eines Quadrats sind nie direkt verbunden.
+    ASSERT_FALSE(board.areAdjacent(idx("a1"), idx("g1")));
+    ASSERT_FALSE(board.areAdjacent(idx("a7"), idx("g7")));
+    // Ueber die Mittellinie springen die Quadrate nicht ineinander.
+    ASSERT_FALSE(board.areAdjacent(idx("d7"), idx("d5")));
+    // Ein Feld ist nicht zu sich selbst benachbart.
+    ASSERT_FALSE(board.areAdjacent(idx("d2"), idx("d2")));
+    // Ungueltige Indizes.
+    ASSERT_FALSE(board.areAdjacent(-1, 0));
+    ASSERT_FALSE(board.areAdjacent(0, kFieldCount));
+}
+
+TEST(Board, adjazenzIstSymmetrisch) {
+    Board board;
+    // Wenn a Nachbar von b ist, muss auch b Nachbar von a sein. Zugleich die
+    // Gesamtzahl der Kanten zaehlen: 32 Verbindungen, also 64 gerichtete Paare.
+    int directed = 0;
+    for (int a = 0; a < kFieldCount; ++a) {
+        for (Field b : board.neighbors(a)) {
+            ASSERT_TRUE(board.areAdjacent(b, a));
+            ++directed;
+        }
+    }
+    ASSERT_EQ(directed, 64);
+}
+
+TEST(Board, erkenntGeschlosseneMuehle) {
+    Board board;
+    // Reihe 1 mit Weiss vollstaendig besetzen: a1 d1 g1.
+    board.placeStone(idx("a1"), Color::White);
+    board.placeStone(idx("d1"), Color::White);
+    board.placeStone(idx("g1"), Color::White);
+    ASSERT_TRUE(board.formsMill(idx("a1"), Color::White));
+    ASSERT_TRUE(board.formsMill(idx("d1"), Color::White));
+    ASSERT_TRUE(board.formsMill(idx("g1"), Color::White));
+}
+
+TEST(Board, unvollstaendigeOderGemischteLinieIstKeineMuehle) {
+    Board board;
+    // Nur zwei der drei Felder besetzt.
+    board.placeStone(idx("a1"), Color::White);
+    board.placeStone(idx("d1"), Color::White);
+    ASSERT_FALSE(board.formsMill(idx("a1"), Color::White));
+    // Drittes Feld in der Gegenfarbe: keine Muehle fuer Weiss, keine fuer Schwarz.
+    board.placeStone(idx("g1"), Color::Black);
+    ASSERT_FALSE(board.formsMill(idx("a1"), Color::White));
+    ASSERT_FALSE(board.formsMill(idx("g1"), Color::Black));
+    // Leere Farbe bildet nie eine Muehle.
+    ASSERT_FALSE(board.formsMill(idx("a1"), Color::None));
+}
+
+TEST(Board, senkrechteMuehleZaehltUnabhaengigVonWaagerechter) {
+    Board board;
+    // Datei a komplett: a7 a4 a1. Pruefen, dass die senkrechte Linie greift.
+    board.placeStone(idx("a7"), Color::Black);
+    board.placeStone(idx("a4"), Color::Black);
+    board.placeStone(idx("a1"), Color::Black);
+    ASSERT_TRUE(board.formsMill(idx("a4"), Color::Black));
+    // a4 ist Teil keiner waagerechten Dreierlinie mit nur einem Feldnamen,
+    // die Erkennung darf also nicht von der Reihe abhaengen.
+    ASSERT_FALSE(board.formsMill(idx("a4"), Color::White));
 }
 
 // Erste Tests auf der Phasen-Ableitung des Spielers.
