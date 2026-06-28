@@ -27,4 +27,3 @@ ctest --test-dir build  # Tests über CTest ausführen
 Sprint A abgeschlossen: Projektgerüst, Klassen-Skelette, eigenes Test-Framework,
 lauffähiger Build. Der weitere Plan und der aktuelle Fortschritt stehen in
 `Uebergabe_Phase2.md`.
-# muehle-boardgame-engine
