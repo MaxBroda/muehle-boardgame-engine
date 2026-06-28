@@ -3,3 +3,10 @@ build/
 
 # macOS
 .DS_Store
+
+# WIP Progress Datei
+Uebergabe_Phase2.md
+
+# exclude saved game files
+data/*.txt
+!data/README.md
