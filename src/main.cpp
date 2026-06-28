@@ -103,7 +103,14 @@ std::string chooseSaveFile(const ConsoleRenderer& renderer,
         return "";
     }
     if (isAllDigits(input)) {
-        std::size_t n = static_cast<std::size_t>(std::stoul(input));
+        std::size_t n = 0;
+        try {
+            n = static_cast<std::size_t>(std::stoul(input));
+        } catch (...) {
+            // Unrealistisch grosse Zahl: wie eine ungueltige Nummer behandeln,
+            // statt mit einer Ausnahme abzustuerzen.
+            return "";
+        }
         if (n >= 1 && n <= files.size()) {
             return files[n - 1];
         }

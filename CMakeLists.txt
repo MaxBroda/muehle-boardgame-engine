@@ -22,7 +22,12 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 # Warnungen einschalten. Wir wollen sauberen Code, also lieber viel sehen.
-add_compile_options(-Wall -Wextra)
+# Compiler-spezifisch, damit der Build auch unter Windows mit MSVC sauber laeuft.
+if(MSVC)
+    add_compile_options(/W4)
+else()
+    add_compile_options(-Wall -Wextra)
+endif()
 
 # --- 1. Bibliothek mit der gesamten Spiellogik -------------------------------
 # Alle Quellen ausser main.cpp landen hier, damit die Tests dieselbe Logik
