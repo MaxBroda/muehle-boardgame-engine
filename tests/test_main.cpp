@@ -133,6 +133,77 @@ TEST(Player, startetInSetzphase) {
     ASSERT_TRUE(p.currentPhase() == Phase::Placing);
 }
 
+// --- Sprint C: Player-Phasen und canMove ------------------------------------
+
+// Hilfsfunktion: liefert einen Spieler, der die Hand geleert hat und genau
+// "onBoard" Steine auf dem Brett fuehrt. So lassen sich Zieh- und Springphase
+// gezielt herstellen.
+static Player makePlacedPlayer(Color c, int onBoard) {
+    Player p(c, "X");
+    for (int i = 0; i < kStonesPerPlayer; ++i) {
+        p.removeFromHand();
+    }
+    for (int i = 0; i < onBoard; ++i) {
+        p.addToBoard();
+    }
+    return p;
+}
+
+TEST(Player, phaseWechseltMitSteinzahl) {
+    // Frisch: Hand voll, also Setzphase.
+    Player p(Color::White, "X");
+    ASSERT_TRUE(p.currentPhase() == Phase::Placing);
+
+    // Hand leer mit vier Steinen auf dem Brett: Ziehphase.
+    Player moving = makePlacedPlayer(Color::White, 4);
+    ASSERT_FALSE(moving.hasStonesInHand());
+    ASSERT_TRUE(moving.currentPhase() == Phase::Moving);
+
+    // Genau drei Steine: Springphase.
+    Player flying = makePlacedPlayer(Color::White, kFlyingThreshold);
+    ASSERT_TRUE(flying.currentPhase() == Phase::Flying);
+}
+
+TEST(Player, kannInSetzphaseImmerZiehenSolangeEinFeldFreiIst) {
+    Board board;
+    Player p(Color::White, "X");
+    ASSERT_TRUE(p.canMove(board));
+}
+
+TEST(Player, eingeschlossenerSteinKannInZiehphaseNichtZiehen) {
+    // Vier weisse Steine auf den vier Aussenecken, alle Nachbarfelder durch
+    // Schwarz blockiert. Damit hat kein weisser Stein ein freies Nachbarfeld.
+    Board board;
+    board.placeStone(idx("a7"), Color::White);
+    board.placeStone(idx("g7"), Color::White);
+    board.placeStone(idx("a1"), Color::White);
+    board.placeStone(idx("g1"), Color::White);
+    board.placeStone(idx("d7"), Color::Black);
+    board.placeStone(idx("a4"), Color::Black);
+    board.placeStone(idx("g4"), Color::Black);
+    board.placeStone(idx("d1"), Color::Black);
+
+    Player white = makePlacedPlayer(Color::White, 4);
+    ASSERT_TRUE(white.currentPhase() == Phase::Moving);
+    ASSERT_FALSE(white.canMove(board));
+
+    // Ein Nachbarfeld frei raeumen: jetzt ist ein Zug moeglich.
+    board.removeStone(idx("d7"));
+    ASSERT_TRUE(white.canMove(board));
+}
+
+TEST(Player, springphaseBrauchtNurEinFreiesFeld) {
+    // Drei Steine, Brett fast leer: in der Springphase immer ein Zug moeglich,
+    // auch wenn kein Stein ein freies direktes Nachbarfeld haette.
+    Board board;
+    board.placeStone(idx("a7"), Color::White);
+    board.placeStone(idx("g7"), Color::White);
+    board.placeStone(idx("g1"), Color::White);
+    Player flying = makePlacedPlayer(Color::White, kFlyingThreshold);
+    ASSERT_TRUE(flying.currentPhase() == Phase::Flying);
+    ASSERT_TRUE(flying.canMove(board));
+}
+
 int main() {
     return ::testing::runAll();
 }

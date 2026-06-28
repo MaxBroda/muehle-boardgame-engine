@@ -46,9 +46,29 @@ bool Player::hasStonesInHand() const {
 }
 
 bool Player::canMove(const Board& board) const {
-    // TODO Sprint C/D: prueft, ob mindestens ein gueltiger Zug existiert.
-    (void)board;
-    return true;
+    // In der Setzphase wird ein Stein aus der Hand auf irgendein freies Feld
+    // gesetzt. Es gibt also einen Zug, solange ueberhaupt ein Feld frei ist.
+    if (hasStonesInHand()) {
+        return !board.emptyFields().empty();
+    }
+    // In der Springphase darf der Spieler auf jedes freie Feld springen, ein
+    // einziges freies Feld genuegt damit ebenfalls.
+    if (currentPhase() == Phase::Flying) {
+        return !board.emptyFields().empty();
+    }
+    // In der Ziehphase braucht mindestens einer der eigenen Steine ein freies
+    // Nachbarfeld.
+    for (int f = 0; f < kFieldCount; ++f) {
+        if (board.colorAt(f) != color_) {
+            continue;
+        }
+        for (Field n : board.neighbors(f)) {
+            if (board.isEmpty(n)) {
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 void Player::removeFromHand() {
