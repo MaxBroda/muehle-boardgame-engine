@@ -1,0 +1,58 @@
+#pragma once
+
+#include <string>
+#include <vector>
+
+#include "Board.h"
+#include "Move.h"
+#include "Player.h"
+#include "Types.h"
+
+namespace muehle {
+
+// Die zentrale Spielklasse. Sie orchestriert den Ablauf, haelt Brett und beide
+// Spieler und enthaelt die einzige Regelpruefung des Projekts. Sowohl das
+// laufende Spiel als auch das Laden und die Wiedergabe rufen genau diese
+// Pruefung auf, damit Regeln nur an einer Stelle stehen.
+class Game {
+public:
+    Game(std::string whiteName, std::string blackName);
+
+    // Der Spieler, der gerade am Zug ist.
+    const Player& currentPlayer() const;
+
+    // Prueft einen Zug gegen Brett- und Spielerzustand. Liefert true, wenn der
+    // Zug gueltig ist. Bei false steht in "reason" eine Klartextbegruendung.
+    // Vollstaendige Regeln folgen in Sprint D.
+    bool validateMove(const Move& m, std::string& reason) const;
+
+    // Fuehrt einen Zug aus. Setzt voraus, dass er gueltig ist. Liefert true bei
+    // Erfolg.
+    bool applyMove(const Move& m);
+
+    // Wurde mit dem letzten Zug eine Muehle geschlossen, sodass jetzt ein
+    // gegnerischer Stein zu entfernen ist?
+    bool needsRemoval() const;
+
+    // Ist die Partie beendet?
+    bool isGameOver() const;
+
+    // Gewinner der Partie (Color::None, solange sie laeuft).
+    Color winner() const;
+
+    // Das vollstaendige Zugjournal.
+    const std::vector<Move>& history() const;
+
+    // Lesezugriff auf das Brett (z.B. zum Zeichnen).
+    const Board& board() const;
+
+private:
+    Board board_;
+    Player white_;
+    Player black_;
+    Color toMove_;          // wer ist am Zug
+    bool pendingRemoval_;    // wartet das Spiel auf das Entfernen eines Steins?
+    std::vector<Move> history_;
+};
+
+} // namespace muehle
