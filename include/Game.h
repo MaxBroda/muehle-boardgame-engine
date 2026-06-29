@@ -41,6 +41,14 @@ public:
     // erkennt das Laden beschaedigte Protokolle.
     bool replayLogged(const Move& logged, std::string& reason);
 
+    // Nimmt den letzten vollstaendigen Zug zurueck. Das Spiel wird dazu aus dem
+    // Zugjournal ohne den letzten Eintrag neu aufgebaut, ueber dieselbe zentrale
+    // Validierung wie beim Laden. So gibt es keinen zweiten Regelpfad und keinen
+    // von Hand gepflegten Rueckwaerts-Code. Liefert false, wenn es keinen Zug
+    // gibt oder gerade ein Entfernen aussteht (dann ist der Zug noch nicht
+    // abgeschlossen und kann nicht als Ganzes zurueckgenommen werden).
+    bool undoLastMove();
+
     // Wurde mit dem letzten Zug eine Muehle geschlossen, sodass jetzt ein
     // gegnerischer Stein zu entfernen ist? Solange das gilt, bleibt derselbe
     // Spieler am Zug und muss als naechstes ein Entfernen einreichen.
@@ -50,6 +58,12 @@ public:
     // (Schutzregel beruecksichtigt). Nur waehrend needsRemoval() gefuellt,
     // sonst leer. Dient der Eingabeaufforderung und dem Hinweis-Modus.
     std::vector<Field> removableStones() const;
+
+    // Alle im aktuellen Zustand gueltigen Zuege fuer den Hinweis-Modus. Steht
+    // ein Entfernen aus, sind es die entfernbaren Steine; sonst alle zur Phase
+    // passenden Setz-, Zieh- oder Springzuege. Geht ueber dieselbe Validierung
+    // wie ein echter Zug, kann also nie von den Spielregeln abweichen.
+    std::vector<Move> legalMoves() const;
 
     // Ist die Partie beendet?
     bool isGameOver() const;

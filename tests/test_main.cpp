@@ -2,15 +2,21 @@
 
 #include <cstdio>
 #include <fstream>
+#include <iterator>
 #include <string>
 #include <vector>
 
 #include "Board.h"
+#include "CommandLine.h"
+#include "ConsoleRenderer.h"
+#include "EventLog.h"
 #include "Game.h"
 #include "InputParser.h"
 #include "Move.h"
 #include "MoveLogger.h"
+#include "MoveTimer.h"
 #include "Player.h"
+#include "Statistics.h"
 
 using namespace muehle;
 
@@ -590,6 +596,327 @@ TEST(MoveLogger, kopfzeileOhneBeideNamenIstUngueltig) {
     std::string black;
     ASSERT_FALSE(logger.readHeader(path, white, black));
     std::remove(path.c_str());
+}
+
+// --- Sprint G: Zusatzfeatures -----------------------------------------------
+
+TEST(Undo, nimmtLetztenSetzzugZurueck) {
+    Game game("Weiss", "Schwarz");
+    place(game, "a1");  // W
+    place(game, "a7");  // B, jetzt ist wieder Weiss am Zug
+    ASSERT_EQ(static_cast<int>(game.history().size()), 2);
+    ASSERT_EQ(game.currentPlayer().color(), Color::White);
+
+    ASSERT_TRUE(game.undoLastMove());
+    // Der schwarze Stein ist verschwunden, Schwarz ist wieder am Zug.
+    ASSERT_EQ(static_cast<int>(game.history().size()), 1);
+    ASSERT_EQ(game.board().colorAt(idx("a7")), Color::None);
+    ASSERT_EQ(game.board().colorAt(idx("a1")), Color::White);
+    ASSERT_EQ(game.currentPlayer().color(), Color::Black);
+}
+
+TEST(Undo, stelltGeschlosseneMuehleUndEntferntenSteinWiederHer) {
+    Game game("Weiss", "Schwarz");
+    place(game, "a1");        // W
+    place(game, "a7");        // B
+    place(game, "d1");        // W
+    place(game, "a4");        // B
+    place(game, "g1");        // W schliesst a1-d1-g1
+    removeStone(game, "a7");  // Weiss entfernt a7, dann ist Schwarz am Zug
+    ASSERT_EQ(game.board().colorAt(idx("a7")), Color::None);
+    ASSERT_EQ(game.currentPlayer().color(), Color::Black);
+
+    // Undo nimmt den gesamten Muehlen-Zug inklusive Entfernen zurueck.
+    ASSERT_TRUE(game.undoLastMove());
+    ASSERT_EQ(game.board().colorAt(idx("g1")), Color::None);  // Setzzug weg
+    ASSERT_EQ(game.board().colorAt(idx("a7")), Color::Black); // Stein zurueck
+    ASSERT_EQ(static_cast<int>(game.history().size()), 4);
+    ASSERT_EQ(game.currentPlayer().color(), Color::White);
+    ASSERT_FALSE(game.needsRemoval());
+}
+
+TEST(Undo, lehntOhneZugUndWaehrendEntfernenAb) {
+    Game game("Weiss", "Schwarz");
+    // Ohne jeden Zug gibt es nichts zurueckzunehmen.
+    ASSERT_FALSE(game.undoLastMove());
+
+    // Eine Muehle schliessen, ohne den Stein schon zu entfernen.
+    place(game, "a1");  // W
+    place(game, "a7");  // B
+    place(game, "d1");  // W
+    place(game, "a4");  // B
+    place(game, "g1");  // W schliesst Muehle, Entfernen steht aus
+    ASSERT_TRUE(game.needsRemoval());
+    // Mitten im Zug (Entfernen offen) ist kein Undo moeglich.
+    ASSERT_FALSE(game.undoLastMove());
+}
+
+TEST(Hint, listetAlleSetzzuegeUndSchrumpftMitJedemStein) {
+    Game game("Weiss", "Schwarz");
+    // Auf leerem Brett ist jedes der 24 Felder ein gueltiger Setzzug.
+    ASSERT_EQ(static_cast<int>(game.legalMoves().size()), kFieldCount);
+    place(game, "a1");
+    // Ein Feld ist belegt, also bleiben 23 Setzzuege fuer Schwarz.
+    ASSERT_EQ(static_cast<int>(game.legalMoves().size()), kFieldCount - 1);
+    // In der Ziehphase muss der Hinweis mit der unabhaengig gezaehlten Liste
+    // gueltiger Aktionen uebereinstimmen.
+    Game moving("Weiss", "Schwarz");
+    playMillFreeOpening(moving);
+    ASSERT_TRUE(moving.currentPlayer().currentPhase() == Phase::Moving);
+    ASSERT_EQ(static_cast<int>(moving.legalMoves().size()),
+              static_cast<int>(legalActions(moving).size()));
+    ASSERT_FALSE(moving.legalMoves().empty());
+}
+
+TEST(Hint, zeigtWaehrendEntfernenDieEntfernbarenSteine) {
+    Game game("Weiss", "Schwarz");
+    place(game, "a1");  // W
+    place(game, "a7");  // B
+    place(game, "d1");  // W
+    place(game, "a4");  // B
+    place(game, "g1");  // W schliesst Muehle
+    ASSERT_TRUE(game.needsRemoval());
+    std::vector<Move> hints = game.legalMoves();
+    // Genauso viele Hinweise wie entfernbare Steine, und jeder Hinweis ist ein
+    // Entfernen (kein Zielfeld, kein Quellfeld).
+    ASSERT_EQ(static_cast<int>(hints.size()),
+              static_cast<int>(game.removableStones().size()));
+    ASSERT_FALSE(hints.empty());
+    ASSERT_EQ(hints.front().to, -1);
+    ASSERT_EQ(hints.front().from, -1);
+    ASSERT_TRUE(hints.front().removed >= 0);
+}
+
+// Spielt eine deterministische Partie bis zum Ende, indem bevorzugt Muehlen
+// geschlossen werden. Dieselbe Strategie wie im End-to-End-Test, hier wieder-
+// verwendet, um eine beendete Partie fuer die Statistik zu erzeugen.
+static void playToEnd(Game& game) {
+    int ply = 0;
+    const int kMaxPly = 3000;
+    while (!game.isGameOver() && ply < kMaxPly) {
+        if (game.needsRemoval()) {
+            std::vector<Field> targets = game.removableStones();
+            Move r;
+            r.removed = targets.front();
+            game.applyMove(r);
+            ++ply;
+            continue;
+        }
+        std::vector<Move> actions = legalActions(game);
+        Move chosen = actions.front();
+        for (const Move& cand : actions) {
+            Game probe = game;
+            probe.applyMove(cand);
+            if (probe.needsRemoval()) {
+                chosen = cand;
+                break;
+            }
+        }
+        game.applyMove(chosen);
+        ++ply;
+    }
+}
+
+TEST(Statistics, zaehltSiegeUndSortiertNachSiegen) {
+    Statistics stats;
+    // Anna gewinnt gegen Bert, Cara gewinnt gegen Anna, Bert/Anna bleibt offen.
+    stats.addResult(GameResult{"Anna", "Bert", Color::White});
+    stats.addResult(GameResult{"Anna", "Cara", Color::Black});
+    stats.addResult(GameResult{"Bert", "Anna", Color::None});
+    ASSERT_EQ(stats.totalGames(), 3);
+
+    std::vector<Statistics::Entry> r = stats.ranking();
+    ASSERT_EQ(static_cast<int>(r.size()), 3);
+    // Anna und Cara haben je einen Sieg; bei Gleichstand entscheidet der Name.
+    ASSERT_EQ(r[0].name, std::string("Anna"));
+    ASSERT_EQ(r[0].wins, 1);
+    ASSERT_EQ(r[0].losses, 1);
+    ASSERT_EQ(r[0].games, 3);
+    ASSERT_EQ(r[1].name, std::string("Cara"));
+    ASSERT_EQ(r[1].wins, 1);
+    // Bert hat keinen Sieg und steht hinten.
+    ASSERT_EQ(r[2].name, std::string("Bert"));
+    ASSERT_EQ(r[2].wins, 0);
+    ASSERT_EQ(r[2].losses, 1);
+    ASSERT_EQ(r[2].games, 2);
+}
+
+TEST(Statistics, wertetBeendetePartieAusProtokollAus) {
+    const std::string path = "/tmp/muehle_test_stats.txt";
+    // Eine vollstaendige Partie spielen und als Protokoll speichern.
+    Game game("Anna", "Bert");
+    playToEnd(game);
+    ASSERT_TRUE(game.isGameOver());
+    MoveLogger logger;
+    ASSERT_TRUE(logger.saveSnapshot(path, game));
+
+    GameResult result;
+    ASSERT_TRUE(evaluateLog(path, result));
+    ASSERT_EQ(result.whiteName, std::string("Anna"));
+    ASSERT_EQ(result.blackName, std::string("Bert"));
+    // Der aus dem Protokoll ermittelte Gewinner stimmt mit dem Spiel ueberein.
+    ASSERT_TRUE(result.winner == game.winner());
+    ASSERT_FALSE(result.winner == Color::None);
+    std::remove(path.c_str());
+}
+
+TEST(Statistics, offenerZwischenstandHatKeinenGewinner) {
+    const std::string path = "/tmp/muehle_test_stats_open.txt";
+    // Nur wenige Setzzuege: die Partie ist noch lange nicht entschieden.
+    Game game("Anna", "Bert");
+    place(game, "a1");
+    place(game, "a7");
+    place(game, "d1");
+    ASSERT_FALSE(game.isGameOver());
+    MoveLogger logger;
+    ASSERT_TRUE(logger.saveSnapshot(path, game));
+
+    GameResult result;
+    ASSERT_TRUE(evaluateLog(path, result));
+    // Lesbar und gueltig, aber ohne Sieger: zaehlt nicht in die Sieg-Statistik.
+    ASSERT_TRUE(result.winner == Color::None);
+    std::remove(path.c_str());
+}
+
+TEST(Statistics, lehntBeschaedigtesProtokollAb) {
+    const std::string path = "/tmp/muehle_test_stats_broken.txt";
+    // Gueltige Kopfzeile, aber ein regelwidriger doppelter Setzzug.
+    writeFile(path, "Weiss: A\nSchwarz: B\na1\na1\n");
+    GameResult result;
+    ASSERT_FALSE(evaluateLog(path, result));
+    std::remove(path.c_str());
+}
+
+TEST(MoveTimer, summiertUndMitteltAufgenommeneZuege) {
+    MoveTimer timer;
+    timer.record(100);
+    timer.record(300);
+    timer.record(200);
+    ASSERT_EQ(timer.count(), 3);
+    ASSERT_EQ(timer.total(), 600);
+    ASSERT_EQ(timer.average(), 200);   // 600 / 3
+    ASSERT_EQ(timer.longest(), 300);
+    ASSERT_EQ(timer.last(), 200);      // der zuletzt aufgenommene Wert
+}
+
+TEST(MoveTimer, durchschnittWirdGerundetNichtAbgeschnitten) {
+    MoveTimer timer;
+    timer.record(100);
+    timer.record(101);
+    timer.record(101);  // Summe 302, 302/3 = 100,67
+    // Kaufmaennisch gerundet ergibt das 101, abgeschnitten waeren es 100.
+    ASSERT_EQ(timer.average(), 101);
+}
+
+TEST(MoveTimer, leerUndUnplausibleWerte) {
+    MoveTimer timer;
+    // Ohne Zuege ist alles null, ohne Division durch null.
+    ASSERT_EQ(timer.count(), 0);
+    ASSERT_EQ(timer.total(), 0);
+    ASSERT_EQ(timer.average(), 0);
+    ASSERT_EQ(timer.longest(), 0);
+    ASSERT_EQ(timer.last(), 0);
+    // Eine negative Messung wird verworfen, ein gueltiger Wert danach zaehlt.
+    timer.record(-50);
+    ASSERT_EQ(timer.count(), 0);
+    ASSERT_EQ(timer.last(), 0);
+    timer.record(80);
+    ASSERT_EQ(timer.count(), 1);
+    ASSERT_EQ(timer.average(), 80);
+    ASSERT_EQ(timer.last(), 80);
+}
+
+TEST(BoxArt, waehltKnotenNachAnschluessen) {
+    // up, down, left, right
+    ASSERT_EQ(std::string(ConsoleRenderer::nodeGlyph(false, true, false, true)),
+              std::string("┌"));  // obere linke Ecke
+    ASSERT_EQ(std::string(ConsoleRenderer::nodeGlyph(true, false, true, false)),
+              std::string("┘"));  // untere rechte Ecke
+    ASSERT_EQ(std::string(ConsoleRenderer::nodeGlyph(true, true, true, true)),
+              std::string("┼"));  // vollstaendige Kreuzung
+    ASSERT_EQ(std::string(ConsoleRenderer::nodeGlyph(false, true, true, true)),
+              std::string("┬"));  // T-Stueck nach unten
+}
+
+TEST(BoxArt, faelltBeiUngueltigenAnschluessenAufMittelpunktZurueck) {
+    // Gar kein Anschluss oder nur eine einzelne Richtung kommt auf dem Brett
+    // nicht vor und ergibt den neutralen Mittelpunkt.
+    ASSERT_EQ(std::string(ConsoleRenderer::nodeGlyph(false, false, false, false)),
+              std::string("·"));
+    ASSERT_EQ(std::string(ConsoleRenderer::nodeGlyph(true, false, false, false)),
+              std::string("·"));
+}
+
+TEST(CommandLine, erkenntLoggingFlagUndPfad) {
+    // Ohne Argumente ist nichts aktiv.
+    CommandLineOptions none = parseCommandLine({});
+    ASSERT_FALSE(none.logging);
+    ASSERT_FALSE(none.help);
+
+    // Reines Flag schaltet das Logging ein und ueberlaesst den Namen der
+    // Anwendung (logPath bleibt leer).
+    CommandLineOptions on = parseCommandLine({"--log"});
+    ASSERT_TRUE(on.logging);
+    ASSERT_TRUE(on.logPath.empty());
+
+    // Mit eigenem Pfad.
+    CommandLineOptions path = parseCommandLine({"--log=data/partie.log"});
+    ASSERT_TRUE(path.logging);
+    ASSERT_EQ(path.logPath, std::string("data/partie.log"));
+
+    // Hilfe.
+    CommandLineOptions help = parseCommandLine({"-h"});
+    ASSERT_TRUE(help.help);
+}
+
+TEST(CommandLine, meldetUnbekanntesArgument) {
+    CommandLineOptions opts = parseCommandLine({"--unsinn", "--log"});
+    // Das Logging wird trotzdem erkannt, das unbekannte Argument vermerkt.
+    ASSERT_TRUE(opts.logging);
+    ASSERT_TRUE(opts.unknownOption);
+    ASSERT_EQ(opts.unknown, std::string("--unsinn"));
+}
+
+TEST(EventLog, inaktivSchreibtNichts) {
+    EventLog log;
+    ASSERT_FALSE(log.isActive());
+    log.log("wird verworfen");
+    ASSERT_EQ(log.entryCount(), 0);
+}
+
+TEST(EventLog, aktivSchreibtNummerierteZeilen) {
+    const std::string path = "/tmp/muehle_test_eventlog.txt";
+    std::remove(path.c_str());
+    {
+        EventLog log;
+        ASSERT_TRUE(log.open(path));
+        ASSERT_TRUE(log.isActive());
+        log.log("erste Zeile");
+        log.log("zweite Zeile");
+        ASSERT_EQ(log.entryCount(), 2);
+    }
+    // Die Datei enthaelt Kopf und beide nummerierten Zeilen.
+    std::ifstream in(path);
+    std::string content((std::istreambuf_iterator<char>(in)),
+                        std::istreambuf_iterator<char>());
+    ASSERT_TRUE(content.find("0001  erste Zeile") != std::string::npos);
+    ASSERT_TRUE(content.find("0002  zweite Zeile") != std::string::npos);
+    std::remove(path.c_str());
+}
+
+TEST(MoveTimer, formatiertSekundenMitZweiNachkommastellen) {
+    // Glatte und gerundete Werte.
+    ASSERT_EQ(MoveTimer::formatSeconds(56160), std::string("56.16 s"));
+    ASSERT_EQ(MoveTimer::formatSeconds(1000), std::string("1.00 s"));
+    ASSERT_EQ(MoveTimer::formatSeconds(56166), std::string("56.17 s")); // gerundet
+    // Fuehrende Null in den Nachkommastellen.
+    ASSERT_EQ(MoveTimer::formatSeconds(2050), std::string("2.05 s"));
+}
+
+TEST(MoveTimer, formatiertRandwerte) {
+    // Null und ein negativer (unplausibler) Wert ergeben sauber 0.00 s.
+    ASSERT_EQ(MoveTimer::formatSeconds(0), std::string("0.00 s"));
+    ASSERT_EQ(MoveTimer::formatSeconds(-100), std::string("0.00 s"));
 }
 
 int main() {

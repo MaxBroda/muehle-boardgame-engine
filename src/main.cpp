@@ -1,15 +1,21 @@
 #include <algorithm>
 #include <cctype>
+#include <chrono>
+#include <ctime>
 #include <filesystem>
 #include <iostream>
 #include <string>
 #include <vector>
 
+#include "CommandLine.h"
 #include "ConsoleRenderer.h"
+#include "EventLog.h"
 #include "Game.h"
 #include "InputParser.h"
 #include "Move.h"
 #include "MoveLogger.h"
+#include "MoveTimer.h"
+#include "Statistics.h"
 #include "Types.h"
 
 // Einstiegspunkt der Konsolenanwendung. main verbindet die Bausteine zu einem
@@ -28,7 +34,7 @@ namespace fs = std::filesystem;
 const char* kSavesDir = "data";
 
 // Ausgang eines Zug-Dialogs.
-enum class Turn { Applied, Quit, EndOfInput };
+enum class Turn { Applied, Undone, Quit, EndOfInput };
 
 // Legt den Speicherordner an, falls er fehlt.
 void ensureSavesDir() {
@@ -64,6 +70,34 @@ bool isAllDigits(const std::string& s) {
     return true;
 }
 
+// Kurze, lesbare Notation eines Zugs fuer den Hinweis-Modus. Setzzug als
+// einzelnes Feld, Zieh- oder Springzug als "von-nach", Entfernen als "x feld".
+std::string describeMove(const Move& m) {
+    if (m.removed != -1 && m.to == -1) {
+        return "x " + fieldName(m.removed);
+    }
+    if (m.from == -1) {
+        return fieldName(m.to);
+    }
+    return fieldName(m.from) + "-" + fieldName(m.to);
+}
+
+// Zeigt alle aktuell gueltigen Zuege als durchgehende Zeile.
+void showHints(const ConsoleRenderer& renderer, const Game& game) {
+    std::vector<Move> moves = game.legalMoves();
+    if (moves.empty()) {
+        renderer.showMessage("Keine gueltigen Zuege.");
+        return;
+    }
+    std::string list;
+    for (const Move& m : moves) {
+        if (!list.empty()) list += ", ";
+        list += describeMove(m);
+    }
+    renderer.showMessage("Moegliche Zuege (" + std::to_string(moves.size()) +
+                         "): " + list);
+}
+
 // Klartextname einer Phase fuer die Anzeige.
 std::string phaseName(Phase p) {
     switch (p) {
@@ -72,6 +106,13 @@ std::string phaseName(Phase p) {
         case Phase::Flying:  return "Springphase";
     }
     return "";
+}
+
+// Klartextname einer Farbe fuer die Anzeige.
+std::string colorName(Color c) {
+    if (c == Color::White) return "Weiss";
+    if (c == Color::Black) return "Schwarz";
+    return "?";
 }
 
 // Liest einen nicht leeren Spielernamen ein. Bei leerer Eingabe gilt der
@@ -131,14 +172,50 @@ std::string makeSavePath(std::string name) {
     return std::string(kSavesDir) + "/" + name;
 }
 
-// Zeigt den Kopf eines Zuges: Brett, Spieler am Zug, Phase und Steinzahlen.
-void showSituation(const ConsoleRenderer& renderer, const Game& game) {
+// Baut einen eindeutigen Pfad mit Zeitstempel im Speicherordner, etwa
+// "data/partie_20260629_153012.txt". So lassen sich Partien und Logs ohne
+// Rueckfrage und ohne eine fruehere Datei zu ueberschreiben ablegen. Die
+// Endung steuert auch, ob die Statistik die Datei beachtet: nur .txt zaehlt.
+std::string timestampedPath(const std::string& prefix, const std::string& ext) {
+    std::time_t now = std::time(nullptr);
+    char stamp[32] = {0};
+    std::strftime(stamp, sizeof(stamp), "%Y%m%d_%H%M%S", std::localtime(&now));
+    return std::string(kSavesDir) + "/" + prefix + "_" + stamp + ext;
+}
+
+// Zeigt die bisher verbrauchte Bedenkzeit beider Spieler neben dem Brett. Der
+// Spieler am Zug ist markiert. Die Werte aktualisieren sich nach jedem Zug; ihre
+// Summe entspricht am Ende genau der Gesamtauswertung.
+void showThinkingTimes(const ConsoleRenderer& renderer, const Game& game,
+                       const MoveTimer& whiteTimer, const MoveTimer& blackTimer) {
+    Color toMove = game.currentPlayer().color();
+    renderer.showMessage("Bedenkzeit:");
+    auto line = [&](Color c, const MoveTimer& timer) {
+        std::string prefix = (c == toMove) ? "> " : "  ";
+        std::string lastPart = (timer.count() == 0)
+            ? "noch kein Zug"
+            : "letzter Zug " + MoveTimer::formatSeconds(timer.last());
+        std::string suffix = (c == toMove) ? "   (am Zug)" : "";
+        renderer.showMessage(prefix + game.playerByColor(c).name() + " (" +
+                             colorName(c) + "): gesamt " +
+                             MoveTimer::formatSeconds(timer.total()) + ", " +
+                             lastPart + suffix);
+    };
+    line(Color::White, whiteTimer);
+    line(Color::Black, blackTimer);
+}
+
+// Zeigt den Kopf eines Zuges: Brett, Spieler am Zug, Phase, Steinzahlen und die
+// laufende Bedenkzeit beider Spieler.
+void showSituation(const ConsoleRenderer& renderer, const Game& game,
+                   const MoveTimer& whiteTimer, const MoveTimer& blackTimer) {
     renderer.drawBoard(game.board());
     const Player& p = game.currentPlayer();
     renderer.showMessage("");
     renderer.showMessage("Am Zug: " + p.name() + "  (" + phaseName(p.currentPhase()) + ")");
     renderer.showMessage("Steine in der Hand: " + std::to_string(p.stonesInHand()) +
                          ", auf dem Brett: " + std::to_string(p.stonesOnBoard()));
+    showThinkingTimes(renderer, game, whiteTimer, blackTimer);
 }
 
 // Behandelt das Entfernen eines gegnerischen Steins nach einer Muehle.
@@ -179,9 +256,9 @@ Turn handleMove(const ConsoleRenderer& renderer, const InputParser& parser,
                 Game& game) {
     Phase phase = game.currentPlayer().currentPhase();
     if (phase == Phase::Placing) {
-        renderer.showMessage("Zug (Feld zum Setzen, z.B. d3) oder 'q' zum Beenden:");
+        renderer.showMessage("Zug (Feld z.B. d3), 'h' Hinweis, 'u' Undo oder 'q' Beenden:");
     } else {
-        renderer.showMessage("Zug (von-nach, z.B. a1-a4) oder 'q' zum Beenden:");
+        renderer.showMessage("Zug (von-nach z.B. a1-a4), 'h' Hinweis, 'u' Undo oder 'q' Beenden:");
     }
     while (true) {
         std::string line = renderer.promptInput();
@@ -190,6 +267,18 @@ Turn handleMove(const ConsoleRenderer& renderer, const InputParser& parser,
         }
         if (line == "q" || line == "quit") {
             return Turn::Quit;
+        }
+        if (line == "h" || line == "hint") {
+            showHints(renderer, game);
+            continue;
+        }
+        if (line == "u" || line == "undo") {
+            if (game.undoLastMove()) {
+                renderer.showMessage("Letzter Zug zurueckgenommen.");
+                return Turn::Undone;
+            }
+            renderer.showMessage("Kein Zug zum Zuruecknehmen vorhanden.");
+            continue;
         }
         Move m;
         if (!parser.parseMove(line, phase, m)) {
@@ -228,18 +317,71 @@ void offerSave(const ConsoleRenderer& renderer, const Game& game) {
     }
 }
 
-// Spielt eine bereits angelegte Partie bis zum Ende oder bis zum Abbruch.
+// Schreibt einen ausgefuehrten Zug ins Ereignislog (nur wenn dieses aktiv ist).
+void logMoveEvent(EventLog& eventLog, const Game& game, Color mover, Phase phase,
+                  const Move& done, long long millis) {
+    if (!eventLog.isActive()) {
+        return;
+    }
+    std::string verb = (done.type == MoveType::Place)  ? "setzt"
+                       : (done.type == MoveType::Slide) ? "zieht"
+                                                        : "springt";
+    std::string message = game.playerByColor(mover).name() + " " + verb + " " +
+                          describeMove(done) + " (" + phaseName(phase) + ", " +
+                          std::to_string(millis) + " ms)";
+    if (game.needsRemoval()) {
+        message += " - Muehle geschlossen";
+    }
+    eventLog.log(message);
+}
+
+// Zeigt die ausgewertete Bedenkzeit je Spieler nach dem Spielende.
+void showTiming(const ConsoleRenderer& renderer, const Game& game,
+                const MoveTimer& whiteTimer, const MoveTimer& blackTimer) {
+    auto report = [&](const MoveTimer& timer, Color c) {
+        if (timer.count() == 0) {
+            return;
+        }
+        renderer.showMessage(
+            game.playerByColor(c).name() + ": " +
+            std::to_string(timer.count()) + " Zuege, gesamt " +
+            MoveTimer::formatSeconds(timer.total()) + ", im Schnitt " +
+            MoveTimer::formatSeconds(timer.average()) + ", laengster " +
+            MoveTimer::formatSeconds(timer.longest()));
+    };
+    renderer.showMessage("");
+    renderer.showMessage("Bedenkzeit:");
+    report(whiteTimer, Color::White);
+    report(blackTimer, Color::Black);
+}
+
+// Spielt eine bereits angelegte Partie bis zum Ende oder bis zum Abbruch. Misst
+// dabei die Bedenkzeit je Zug und ordnet sie dem Spieler zu, der am Zug war.
 void runGameLoop(const ConsoleRenderer& renderer, const InputParser& parser,
-                 Game& game) {
+                 Game& game, EventLog& eventLog) {
+    MoveTimer whiteTimer;
+    MoveTimer blackTimer;
     while (!game.isGameOver()) {
         if (game.needsRemoval()) {
+            // Der entfernende Spieler bleibt am Zug; Name vor dem Entfernen merken.
+            std::string remover = game.currentPlayer().name();
             if (!handleRemoval(renderer, parser, game)) {
                 return;
             }
+            if (eventLog.isActive() && !game.history().empty()) {
+                eventLog.log(remover + " entfernt " +
+                             fieldName(game.history().back().removed));
+            }
             continue;
         }
-        showSituation(renderer, game);
+        showSituation(renderer, game, whiteTimer, blackTimer);
+        Color mover = game.currentPlayer().color();
+        Phase phase = game.currentPlayer().currentPhase();
+        auto start = std::chrono::steady_clock::now();
         Turn result = handleMove(renderer, parser, game);
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                           std::chrono::steady_clock::now() - start)
+                           .count();
         if (result == Turn::EndOfInput) {
             return;
         }
@@ -248,6 +390,14 @@ void runGameLoop(const ConsoleRenderer& renderer, const InputParser& parser,
             renderer.showMessage("Zurueck zum Hauptmenue.");
             return;
         }
+        // Nur ein tatsaechlich ausgefuehrter Zug zaehlt; ein Undo nicht.
+        if (result == Turn::Applied) {
+            (mover == Color::White ? whiteTimer : blackTimer).record(elapsed);
+            if (!game.history().empty()) {
+                logMoveEvent(eventLog, game, mover, phase,
+                             game.history().back(), elapsed);
+            }
+        }
     }
 
     renderer.drawBoard(game.board());
@@ -255,18 +405,38 @@ void runGameLoop(const ConsoleRenderer& renderer, const InputParser& parser,
     const std::string& name = game.playerByColor(w).name();
     renderer.showMessage("");
     renderer.showMessage("Spielende. Es gewinnt: " + name + ".");
+    showTiming(renderer, game, whiteTimer, blackTimer);
+
+    // Eine zu Ende gespielte Partie automatisch als Protokoll sichern, damit sie
+    // in die spieluebergreifende Statistik einfliesst, auch ohne manuelles
+    // Speichern zwischendurch.
+    ensureSavesDir();
+    std::string path = timestampedPath("partie", ".txt");
+    MoveLogger logger;
+    if (logger.saveSnapshot(path, game)) {
+        renderer.showMessage("Partie als Protokoll gespeichert: " + path);
+    }
+    if (eventLog.isActive()) {
+        eventLog.log("Partie beendet, Sieger: " + name);
+    }
 }
 
 // Menuepunkt 1: neue Partie.
-void playNewGame(const ConsoleRenderer& renderer, const InputParser& parser) {
+void playNewGame(const ConsoleRenderer& renderer, const InputParser& parser,
+                 EventLog& eventLog) {
     std::string whiteName = askName(renderer, "Spieler 1 (Weiss)");
     std::string blackName = askName(renderer, "Spieler 2 (Schwarz)");
+    if (eventLog.isActive()) {
+        eventLog.log("Neue Partie: " + whiteName + " (Weiss) gegen " + blackName +
+                     " (Schwarz)");
+    }
     Game game(whiteName, blackName);
-    runGameLoop(renderer, parser, game);
+    runGameLoop(renderer, parser, game, eventLog);
 }
 
 // Menuepunkt 2: gespeicherten Spielstand fortsetzen.
-void continueGame(const ConsoleRenderer& renderer, const InputParser& parser) {
+void continueGame(const ConsoleRenderer& renderer, const InputParser& parser,
+                  EventLog& eventLog) {
     std::string path = chooseSaveFile(renderer, "Fortsetzen");
     if (path.empty()) {
         renderer.showMessage("Abgebrochen.");
@@ -285,7 +455,75 @@ void continueGame(const ConsoleRenderer& renderer, const InputParser& parser) {
         return;
     }
     renderer.showMessage("Spielstand geladen. Weiter geht es.");
-    runGameLoop(renderer, parser, game);
+    if (eventLog.isActive()) {
+        eventLog.log("Spielstand fortgesetzt: " + whiteName + " gegen " +
+                     blackName);
+    }
+    runGameLoop(renderer, parser, game, eventLog);
+}
+
+// Haengt Leerzeichen an, bis der Text die gewuenschte Breite hat. Fuer eine
+// einfache, ausgerichtete Tabelle ohne <iomanip>.
+std::string padRight(std::string text, std::size_t width) {
+    if (text.size() < width) {
+        text.append(width - text.size(), ' ');
+    }
+    return text;
+}
+
+// Menuepunkt 4: spieluebergreifende Statistik ueber alle gespeicherten Partien.
+void showStatistics(const ConsoleRenderer& renderer) {
+    std::vector<std::string> files = listSaveFiles();
+    if (files.empty()) {
+        renderer.showMessage("Keine gespeicherten Partien im Ordner '" +
+                             std::string(kSavesDir) + "'.");
+        return;
+    }
+    Statistics stats;
+    int skipped = 0;  // nicht lesbar oder beschaedigt
+    int open = 0;     // offener Zwischenstand ohne Ergebnis
+    for (const std::string& path : files) {
+        GameResult result;
+        if (!evaluateLog(path, result)) {
+            ++skipped;
+            continue;
+        }
+        // Nur abgeschlossene Partien fliessen in die Sieg-Statistik ein; ein
+        // gespeicherter Zwischenstand hat keinen Gewinner und wird nur gezaehlt.
+        if (result.winner == Color::None) {
+            ++open;
+            continue;
+        }
+        stats.addResult(result);
+    }
+    if (stats.totalGames() == 0) {
+        renderer.showMessage("Keine abgeschlossenen Partien gefunden.");
+        if (open > 0) {
+            renderer.showMessage(std::to_string(open) +
+                                 " offene(r) Zwischenstand(e) nicht gewertet.");
+        }
+        return;
+    }
+
+    renderer.showMessage("");
+    renderer.showMessage("Statistik ueber " + std::to_string(stats.totalGames()) +
+                         " abgeschlossene Partie(n):");
+    renderer.showMessage(padRight("Name", 16) + padRight("Partien", 9) +
+                         padRight("Siege", 7) + "Niederlagen");
+    for (const Statistics::Entry& e : stats.ranking()) {
+        renderer.showMessage(padRight(e.name, 16) +
+                             padRight(std::to_string(e.games), 9) +
+                             padRight(std::to_string(e.wins), 7) +
+                             std::to_string(e.losses));
+    }
+    if (open > 0) {
+        renderer.showMessage(std::to_string(open) +
+                             " offene(r) Zwischenstand(e) nicht gewertet.");
+    }
+    if (skipped > 0) {
+        renderer.showMessage(std::to_string(skipped) +
+                             " Datei(en) nicht auswertbar, uebersprungen.");
+    }
 }
 
 // Menuepunkt 3: ein Protokoll wiedergeben, am Stueck oder schrittweise.
@@ -340,10 +578,44 @@ void replayProtocol(const ConsoleRenderer& renderer) {
 } // namespace
 } // namespace muehle
 
-int main() {
+int main(int argc, char** argv) {
     using namespace muehle;
     ConsoleRenderer renderer;
     InputParser parser;
+
+    // Argumente (ohne den Programmnamen) auswerten.
+    std::vector<std::string> args(argv + 1, argv + argc);
+    CommandLineOptions options = parseCommandLine(args);
+    if (options.help) {
+        renderer.showMessage("Aufruf: muehle [--log[=datei]] [-h|--help]");
+        renderer.showMessage("  --log          erweiterte Protokollierung (Dateiname automatisch)");
+        renderer.showMessage("  --log=datei    erweiterte Protokollierung in eine eigene Datei");
+        renderer.showMessage("  -h, --help     diese Hilfe");
+        return 0;
+    }
+    if (options.unknownOption) {
+        renderer.showMessage("Unbekanntes Argument '" + options.unknown +
+                             "', wird ignoriert. '--help' zeigt die Optionen.");
+    }
+
+    // Bei aktivem Flag das Ereignislog oeffnen. Der Standardpfad liegt im
+    // Speicherordner, der dafuer bei Bedarf angelegt wird.
+    EventLog eventLog;
+    if (options.logging) {
+        ensureSavesDir();
+        // Ohne ausdruecklichen Pfad automatisch einen eindeutigen Namen je
+        // Sitzung vergeben (eigene Endung, damit die Statistik ihn nicht als
+        // Spielprotokoll liest).
+        std::string logPath =
+            options.logPath.empty() ? timestampedPath("log", ".log")
+                                    : options.logPath;
+        if (eventLog.open(logPath)) {
+            renderer.showMessage("Erweiterte Protokollierung aktiv: " + logPath);
+        } else {
+            renderer.showMessage("Logdatei '" + logPath +
+                                 "' konnte nicht geoeffnet werden.");
+        }
+    }
 
     renderer.showMessage("Willkommen bei Muehle.");
     while (true) {
@@ -353,13 +625,13 @@ int main() {
             break;
         }
         if (choice == "1") {
-            playNewGame(renderer, parser);
+            playNewGame(renderer, parser, eventLog);
         } else if (choice == "2") {
-            continueGame(renderer, parser);
+            continueGame(renderer, parser, eventLog);
         } else if (choice == "3") {
             replayProtocol(renderer);
         } else if (choice == "4") {
-            renderer.showMessage("Statistik folgt in Sprint G.");
+            showStatistics(renderer);
         } else if (choice == "5" || choice == "q" || choice == "quit") {
             break;
         } else {

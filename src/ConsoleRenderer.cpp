@@ -19,19 +19,38 @@ const char* kWhite = "\033[1;33m";  // gelb, kraeftig
 const char* kBlack = "\033[1;34m";  // blau, kraeftig
 const char* kDim = "\033[2m";       // gedaempft fuer leere Felder
 
-// Liefert das gefaerbte Einzelzeichen fuer ein Feld: ein gefuellter Kreis fuer
-// einen Stein (gelb fuer Weiss, blau fuer Schwarz) und ein gedaempfter
-// Mittelpunkt fuer ein leeres Feld. Die Ausrichtung des Bretts haengt am festen
-// Raster in drawBoard, nicht an der Breite dieser Zeichen.
-std::string symbol(Color c) {
-    switch (c) {
-        case Color::White: return std::string(kWhite) + "●" + kReset;
-        case Color::Black: return std::string(kBlack) + "●" + kReset;
-        default:           return std::string(kDim) + "·" + kReset;
-    }
+// Faerbt einen Stein: ein gefuellter Kreis, gelb fuer Weiss, blau fuer Schwarz.
+std::string stoneSymbol(Color c) {
+    return (c == Color::White ? std::string(kWhite) : std::string(kBlack)) +
+           "●" + kReset;
+}
+
+// Umschliesst ein Zeichen mit der gedaempften Darstellung fuer das Gitter.
+std::string dim(const std::string& s) {
+    return std::string(kDim) + s + kReset;
 }
 
 } // namespace
+
+const char* ConsoleRenderer::nodeGlyph(bool up, bool down, bool left, bool right) {
+    // Anschluesse als Bitmaske: oben=1, unten=2, links=4, rechts=8. Jede gueltige
+    // Kombination auf dem Muehlebrett bekommt das passende Box-Drawing-Zeichen.
+    const int mask = (up ? 1 : 0) | (down ? 2 : 0) | (left ? 4 : 0) | (right ? 8 : 0);
+    switch (mask) {
+        case 3:  return "│";  // up+down              │
+        case 12: return "─";  // left+right           ─
+        case 10: return "┌";  // down+right           ┌
+        case 6:  return "┐";  // down+left            ┐
+        case 9:  return "└";  // up+right             └
+        case 5:  return "┘";  // up+left              ┘
+        case 14: return "┬";  // down+left+right      ┬
+        case 11: return "├";  // up+down+right        ├
+        case 13: return "┴";  // up+left+right        ┴
+        case 7:  return "┤";  // up+down+left          ┤
+        case 15: return "┼";  // up+down+left+right   ┼
+        default: return "·";  // Fallback: Mittelpunkt ·
+    }
+}
 
 void ConsoleRenderer::drawBoard(const Board& board) const {
     // Das Brett wird auf einer festen Leinwand mit 13 Zeilen und 25 Spalten
@@ -75,6 +94,23 @@ void ConsoleRenderer::drawBoard(const Board& board) const {
         {5, 13}, {13, 20}, {2, 14}, {14, 23}
     };
 
+    // Anschluesse jedes Feldes aus den Kanten ableiten: das linke Ende einer
+    // waagerechten Kante hat eine Linie nach rechts, das rechte eine nach links;
+    // analog oben/unten bei den senkrechten Kanten. Daraus ergibt sich das
+    // Knotenzeichen rechnerisch, ganz ohne Zeichen von Hand zu setzen.
+    bool up[kFieldCount] = {};
+    bool down[kFieldCount] = {};
+    bool left[kFieldCount] = {};
+    bool right[kFieldCount] = {};
+    for (const auto& e : hEdges) {
+        right[e[0]] = true;
+        left[e[1]] = true;
+    }
+    for (const auto& e : vEdges) {
+        down[e[0]] = true;
+        up[e[1]] = true;
+    }
+
     // Leinwand mit Einzelzeichen-Zellen, anfangs alles Leerzeichen.
     std::vector<std::vector<std::string>> cell(
         height, std::vector<std::string>(width, " "));
@@ -82,18 +118,23 @@ void ConsoleRenderer::drawBoard(const Board& board) const {
     for (const auto& e : hEdges) {
         int row = fieldRow[e[0]];
         for (int c = fieldCol[e[0]] + 1; c < fieldCol[e[1]]; ++c) {
-            cell[row][c] = "-";
+            cell[row][c] = dim("─");
         }
     }
     for (const auto& e : vEdges) {
         int c = fieldCol[e[0]];
         for (int r = fieldRow[e[0]] + 1; r < fieldRow[e[1]]; ++r) {
-            cell[r][c] = "|";
+            cell[r][c] = dim("│");
         }
     }
-    // Felder zuletzt setzen, damit Steine bzw. Punkte ueber den Linien liegen.
+    // Felder zuletzt setzen, damit sie ueber den Linien liegen. Ein leeres Feld
+    // erscheint als passender Gitterknoten, ein besetztes als farbiger Stein.
     for (int i = 0; i < kFieldCount; ++i) {
-        cell[fieldRow[i]][fieldCol[i]] = symbol(board.colorAt(i));
+        Color c = board.colorAt(i);
+        cell[fieldRow[i]][fieldCol[i]] =
+            (c == Color::None)
+                ? dim(nodeGlyph(up[i], down[i], left[i], right[i]))
+                : stoneSymbol(c);
     }
 
     std::cout << "\n";

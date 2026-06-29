@@ -226,6 +226,37 @@ bool Game::replayLogged(const Move& logged, std::string& reason) {
     return true;
 }
 
+bool Game::undoLastMove() {
+    // Ein halber Zug (Muehle geschlossen, Entfernen offen) laesst sich nicht als
+    // Ganzes zuruecknehmen, und ohne Zug gibt es nichts rueckgaengig zu machen.
+    if (pendingRemoval_ || history_.empty()) {
+        return false;
+    }
+
+    // Alle Zuege bis auf den letzten merken und das Spiel von vorn aufbauen.
+    std::vector<Move> remaining = history_;
+    remaining.pop_back();
+
+    board_.reset();
+    white_ = Player(Color::White, white_.name());
+    black_ = Player(Color::Black, black_.name());
+    toMove_ = Color::White;
+    pendingRemoval_ = false;
+    history_.clear();
+
+    // Die verbliebenen Zuege ueber dieselbe Validierung erneut abspielen. Sie
+    // waren schon einmal gueltig. Schlaegt ein Schritt wider Erwarten doch fehl,
+    // ist die History inkonsistent; dann ehrlich false melden, statt einen nur
+    // halb aufgebauten Zustand als Erfolg auszugeben.
+    std::string reason;
+    for (const Move& m : remaining) {
+        if (!replayLogged(m, reason)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 bool Game::needsRemoval() const {
     return pendingRemoval_;
 }
@@ -235,6 +266,56 @@ std::vector<Field> Game::removableStones() const {
         return {};
     }
     return removableTargets(opponent(toMove_));
+}
+
+std::vector<Move> Game::legalMoves() const {
+    std::vector<Move> out;
+    if (isGameOver()) {
+        return out;
+    }
+    std::string reason;
+
+    // Steht ein Entfernen aus, sind die "Zuege" die entfernbaren Steine.
+    if (pendingRemoval_) {
+        for (Field f : removableStones()) {
+            Move m;
+            m.removed = f;
+            out.push_back(m);
+        }
+        return out;
+    }
+
+    Phase phase = currentPlayer().currentPhase();
+    if (phase == Phase::Placing) {
+        for (int t = 0; t < kFieldCount; ++t) {
+            Move m;
+            m.type = MoveType::Place;
+            m.to = t;
+            if (validateMove(m, reason)) {
+                out.push_back(m);
+            }
+        }
+        return out;
+    }
+
+    // Zieh- und Springphase: jeden eigenen Stein gegen jedes Feld pruefen lassen.
+    MoveType type = (phase == Phase::Moving) ? MoveType::Slide : MoveType::Jump;
+    Color c = currentPlayer().color();
+    for (int f = 0; f < kFieldCount; ++f) {
+        if (board_.colorAt(f) != c) {
+            continue;
+        }
+        for (int t = 0; t < kFieldCount; ++t) {
+            Move m;
+            m.type = type;
+            m.from = f;
+            m.to = t;
+            if (validateMove(m, reason)) {
+                out.push_back(m);
+            }
+        }
+    }
+    return out;
 }
 
 bool Game::isGameOver() const {

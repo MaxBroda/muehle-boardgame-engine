@@ -38,7 +38,11 @@ add_library(muehle_lib
     src/Game.cpp
     src/MoveLogger.cpp
     src/InputParser.cpp
-    src/ConsoleRenderer.cpp)
+    src/ConsoleRenderer.cpp
+    src/Statistics.cpp
+    src/MoveTimer.cpp
+    src/CommandLine.cpp
+    src/EventLog.cpp)
 
 # Die Header liegen unter include/ und sind oeffentlich, damit App und Tests
 # sie ueber #include "Board.h" finden.
