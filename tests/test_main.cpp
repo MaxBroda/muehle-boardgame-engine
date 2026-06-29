@@ -2,11 +2,14 @@
 
 #include <cstdio>
 #include <fstream>
+#include <iterator>
 #include <string>
 #include <vector>
 
 #include "Board.h"
+#include "CommandLine.h"
 #include "ConsoleRenderer.h"
+#include "EventLog.h"
 #include "Game.h"
 #include "InputParser.h"
 #include "Move.h"
@@ -811,6 +814,62 @@ TEST(BoxArt, faelltBeiUngueltigenAnschluessenAufMittelpunktZurueck) {
               std::string("·"));
     ASSERT_EQ(std::string(ConsoleRenderer::nodeGlyph(true, false, false, false)),
               std::string("·"));
+}
+
+TEST(CommandLine, erkenntLoggingFlagUndPfad) {
+    // Ohne Argumente ist nichts aktiv.
+    CommandLineOptions none = parseCommandLine({});
+    ASSERT_FALSE(none.logging);
+    ASSERT_FALSE(none.help);
+
+    // Reines Flag schaltet das Logging mit Standardpfad ein.
+    CommandLineOptions on = parseCommandLine({"--log"});
+    ASSERT_TRUE(on.logging);
+    ASSERT_EQ(on.logPath, std::string("data/muehle.log"));
+
+    // Mit eigenem Pfad.
+    CommandLineOptions path = parseCommandLine({"--log=data/partie.log"});
+    ASSERT_TRUE(path.logging);
+    ASSERT_EQ(path.logPath, std::string("data/partie.log"));
+
+    // Hilfe.
+    CommandLineOptions help = parseCommandLine({"-h"});
+    ASSERT_TRUE(help.help);
+}
+
+TEST(CommandLine, meldetUnbekanntesArgument) {
+    CommandLineOptions opts = parseCommandLine({"--unsinn", "--log"});
+    // Das Logging wird trotzdem erkannt, das unbekannte Argument vermerkt.
+    ASSERT_TRUE(opts.logging);
+    ASSERT_TRUE(opts.unknownOption);
+    ASSERT_EQ(opts.unknown, std::string("--unsinn"));
+}
+
+TEST(EventLog, inaktivSchreibtNichts) {
+    EventLog log;
+    ASSERT_FALSE(log.isActive());
+    log.log("wird verworfen");
+    ASSERT_EQ(log.entryCount(), 0);
+}
+
+TEST(EventLog, aktivSchreibtNummerierteZeilen) {
+    const std::string path = "/tmp/muehle_test_eventlog.txt";
+    std::remove(path.c_str());
+    {
+        EventLog log;
+        ASSERT_TRUE(log.open(path));
+        ASSERT_TRUE(log.isActive());
+        log.log("erste Zeile");
+        log.log("zweite Zeile");
+        ASSERT_EQ(log.entryCount(), 2);
+    }
+    // Die Datei enthaelt Kopf und beide nummerierten Zeilen.
+    std::ifstream in(path);
+    std::string content((std::istreambuf_iterator<char>(in)),
+                        std::istreambuf_iterator<char>());
+    ASSERT_TRUE(content.find("0001  erste Zeile") != std::string::npos);
+    ASSERT_TRUE(content.find("0002  zweite Zeile") != std::string::npos);
+    std::remove(path.c_str());
 }
 
 int main() {

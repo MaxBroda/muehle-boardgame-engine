@@ -7,6 +7,7 @@ build/
 # WIP Progress Datei
 Uebergabe_Phase2.md
 
-# exclude saved game files
+# exclude saved game files and event logs
 data/*.txt
+data/*.log
 !data/README.md

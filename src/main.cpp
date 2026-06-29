@@ -6,7 +6,9 @@
 #include <string>
 #include <vector>
 
+#include "CommandLine.h"
 #include "ConsoleRenderer.h"
+#include "EventLog.h"
 #include "Game.h"
 #include "InputParser.h"
 #include "Move.h"
@@ -271,6 +273,24 @@ void offerSave(const ConsoleRenderer& renderer, const Game& game) {
     }
 }
 
+// Schreibt einen ausgefuehrten Zug ins Ereignislog (nur wenn dieses aktiv ist).
+void logMoveEvent(EventLog& eventLog, const Game& game, Color mover, Phase phase,
+                  const Move& done, long long millis) {
+    if (!eventLog.isActive()) {
+        return;
+    }
+    std::string verb = (done.type == MoveType::Place)  ? "setzt"
+                       : (done.type == MoveType::Slide) ? "zieht"
+                                                        : "springt";
+    std::string message = game.playerByColor(mover).name() + " " + verb + " " +
+                          describeMove(done) + " (" + phaseName(phase) + ", " +
+                          std::to_string(millis) + " ms)";
+    if (game.needsRemoval()) {
+        message += " - Muehle geschlossen";
+    }
+    eventLog.log(message);
+}
+
 // Zeigt die ausgewertete Bedenkzeit je Spieler nach dem Spielende.
 void showTiming(const ConsoleRenderer& renderer, const Game& game,
                 const MoveTimer& whiteTimer, const MoveTimer& blackTimer) {
@@ -294,18 +314,25 @@ void showTiming(const ConsoleRenderer& renderer, const Game& game,
 // Spielt eine bereits angelegte Partie bis zum Ende oder bis zum Abbruch. Misst
 // dabei die Bedenkzeit je Zug und ordnet sie dem Spieler zu, der am Zug war.
 void runGameLoop(const ConsoleRenderer& renderer, const InputParser& parser,
-                 Game& game) {
+                 Game& game, EventLog& eventLog) {
     MoveTimer whiteTimer;
     MoveTimer blackTimer;
     while (!game.isGameOver()) {
         if (game.needsRemoval()) {
+            // Der entfernende Spieler bleibt am Zug; Name vor dem Entfernen merken.
+            std::string remover = game.currentPlayer().name();
             if (!handleRemoval(renderer, parser, game)) {
                 return;
+            }
+            if (eventLog.isActive() && !game.history().empty()) {
+                eventLog.log(remover + " entfernt " +
+                             fieldName(game.history().back().removed));
             }
             continue;
         }
         showSituation(renderer, game);
         Color mover = game.currentPlayer().color();
+        Phase phase = game.currentPlayer().currentPhase();
         auto start = std::chrono::steady_clock::now();
         Turn result = handleMove(renderer, parser, game);
         auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -322,6 +349,10 @@ void runGameLoop(const ConsoleRenderer& renderer, const InputParser& parser,
         // Nur ein tatsaechlich ausgefuehrter Zug zaehlt; ein Undo nicht.
         if (result == Turn::Applied) {
             (mover == Color::White ? whiteTimer : blackTimer).record(elapsed);
+            if (!game.history().empty()) {
+                logMoveEvent(eventLog, game, mover, phase,
+                             game.history().back(), elapsed);
+            }
         }
     }
 
@@ -334,15 +365,21 @@ void runGameLoop(const ConsoleRenderer& renderer, const InputParser& parser,
 }
 
 // Menuepunkt 1: neue Partie.
-void playNewGame(const ConsoleRenderer& renderer, const InputParser& parser) {
+void playNewGame(const ConsoleRenderer& renderer, const InputParser& parser,
+                 EventLog& eventLog) {
     std::string whiteName = askName(renderer, "Spieler 1 (Weiss)");
     std::string blackName = askName(renderer, "Spieler 2 (Schwarz)");
+    if (eventLog.isActive()) {
+        eventLog.log("Neue Partie: " + whiteName + " (Weiss) gegen " + blackName +
+                     " (Schwarz)");
+    }
     Game game(whiteName, blackName);
-    runGameLoop(renderer, parser, game);
+    runGameLoop(renderer, parser, game, eventLog);
 }
 
 // Menuepunkt 2: gespeicherten Spielstand fortsetzen.
-void continueGame(const ConsoleRenderer& renderer, const InputParser& parser) {
+void continueGame(const ConsoleRenderer& renderer, const InputParser& parser,
+                  EventLog& eventLog) {
     std::string path = chooseSaveFile(renderer, "Fortsetzen");
     if (path.empty()) {
         renderer.showMessage("Abgebrochen.");
@@ -361,7 +398,11 @@ void continueGame(const ConsoleRenderer& renderer, const InputParser& parser) {
         return;
     }
     renderer.showMessage("Spielstand geladen. Weiter geht es.");
-    runGameLoop(renderer, parser, game);
+    if (eventLog.isActive()) {
+        eventLog.log("Spielstand fortgesetzt: " + whiteName + " gegen " +
+                     blackName);
+    }
+    runGameLoop(renderer, parser, game, eventLog);
 }
 
 // Haengt Leerzeichen an, bis der Text die gewuenschte Breite hat. Fuer eine
@@ -465,10 +506,38 @@ void replayProtocol(const ConsoleRenderer& renderer) {
 } // namespace
 } // namespace muehle
 
-int main() {
+int main(int argc, char** argv) {
     using namespace muehle;
     ConsoleRenderer renderer;
     InputParser parser;
+
+    // Argumente (ohne den Programmnamen) auswerten.
+    std::vector<std::string> args(argv + 1, argv + argc);
+    CommandLineOptions options = parseCommandLine(args);
+    if (options.help) {
+        renderer.showMessage("Aufruf: muehle [--log[=datei]] [-h|--help]");
+        renderer.showMessage("  --log[=datei]  erweiterte Protokollierung in eine Logdatei");
+        renderer.showMessage("  -h, --help     diese Hilfe");
+        return 0;
+    }
+    if (options.unknownOption) {
+        renderer.showMessage("Unbekanntes Argument '" + options.unknown +
+                             "', wird ignoriert. '--help' zeigt die Optionen.");
+    }
+
+    // Bei aktivem Flag das Ereignislog oeffnen. Der Standardpfad liegt im
+    // Speicherordner, der dafuer bei Bedarf angelegt wird.
+    EventLog eventLog;
+    if (options.logging) {
+        ensureSavesDir();
+        if (eventLog.open(options.logPath)) {
+            renderer.showMessage("Erweiterte Protokollierung aktiv: " +
+                                 options.logPath);
+        } else {
+            renderer.showMessage("Logdatei '" + options.logPath +
+                                 "' konnte nicht geoeffnet werden.");
+        }
+    }
 
     renderer.showMessage("Willkommen bei Muehle.");
     while (true) {
@@ -478,9 +547,9 @@ int main() {
             break;
         }
         if (choice == "1") {
-            playNewGame(renderer, parser);
+            playNewGame(renderer, parser, eventLog);
         } else if (choice == "2") {
-            continueGame(renderer, parser);
+            continueGame(renderer, parser, eventLog);
         } else if (choice == "3") {
             replayProtocol(renderer);
         } else if (choice == "4") {
