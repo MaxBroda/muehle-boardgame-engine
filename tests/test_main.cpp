@@ -11,6 +11,7 @@
 #include "Move.h"
 #include "MoveLogger.h"
 #include "Player.h"
+#include "Statistics.h"
 
 using namespace muehle;
 
@@ -679,6 +680,88 @@ TEST(Hint, zeigtWaehrendEntfernenDieEntfernbarenSteine) {
     ASSERT_EQ(hints.front().to, -1);
     ASSERT_EQ(hints.front().from, -1);
     ASSERT_TRUE(hints.front().removed >= 0);
+}
+
+// Spielt eine deterministische Partie bis zum Ende, indem bevorzugt Muehlen
+// geschlossen werden. Dieselbe Strategie wie im End-to-End-Test, hier wieder-
+// verwendet, um eine beendete Partie fuer die Statistik zu erzeugen.
+static void playToEnd(Game& game) {
+    int ply = 0;
+    const int kMaxPly = 3000;
+    while (!game.isGameOver() && ply < kMaxPly) {
+        if (game.needsRemoval()) {
+            std::vector<Field> targets = game.removableStones();
+            Move r;
+            r.removed = targets.front();
+            game.applyMove(r);
+            ++ply;
+            continue;
+        }
+        std::vector<Move> actions = legalActions(game);
+        Move chosen = actions.front();
+        for (const Move& cand : actions) {
+            Game probe = game;
+            probe.applyMove(cand);
+            if (probe.needsRemoval()) {
+                chosen = cand;
+                break;
+            }
+        }
+        game.applyMove(chosen);
+        ++ply;
+    }
+}
+
+TEST(Statistics, zaehltSiegeUndSortiertNachSiegen) {
+    Statistics stats;
+    // Anna gewinnt gegen Bert, Cara gewinnt gegen Anna, Bert/Anna bleibt offen.
+    stats.addResult(GameResult{"Anna", "Bert", Color::White});
+    stats.addResult(GameResult{"Anna", "Cara", Color::Black});
+    stats.addResult(GameResult{"Bert", "Anna", Color::None});
+    ASSERT_EQ(stats.totalGames(), 3);
+
+    std::vector<Statistics::Entry> r = stats.ranking();
+    ASSERT_EQ(static_cast<int>(r.size()), 3);
+    // Anna und Cara haben je einen Sieg; bei Gleichstand entscheidet der Name.
+    ASSERT_EQ(r[0].name, std::string("Anna"));
+    ASSERT_EQ(r[0].wins, 1);
+    ASSERT_EQ(r[0].losses, 1);
+    ASSERT_EQ(r[0].games, 3);
+    ASSERT_EQ(r[1].name, std::string("Cara"));
+    ASSERT_EQ(r[1].wins, 1);
+    // Bert hat keinen Sieg und steht hinten.
+    ASSERT_EQ(r[2].name, std::string("Bert"));
+    ASSERT_EQ(r[2].wins, 0);
+    ASSERT_EQ(r[2].losses, 1);
+    ASSERT_EQ(r[2].games, 2);
+}
+
+TEST(Statistics, wertetBeendetePartieAusProtokollAus) {
+    const std::string path = "/tmp/muehle_test_stats.txt";
+    // Eine vollstaendige Partie spielen und als Protokoll speichern.
+    Game game("Anna", "Bert");
+    playToEnd(game);
+    ASSERT_TRUE(game.isGameOver());
+    MoveLogger logger;
+    ASSERT_TRUE(logger.saveSnapshot(path, game));
+
+    GameResult result;
+    ASSERT_TRUE(evaluateLog(path, result));
+    ASSERT_EQ(result.whiteName, std::string("Anna"));
+    ASSERT_EQ(result.blackName, std::string("Bert"));
+    // Der aus dem Protokoll ermittelte Gewinner stimmt mit dem Spiel ueberein.
+    ASSERT_TRUE(result.winner == game.winner());
+    ASSERT_FALSE(result.winner == Color::None);
+    std::remove(path.c_str());
+}
+
+TEST(Statistics, lehntBeschaedigtesProtokollAb) {
+    const std::string path = "/tmp/muehle_test_stats_broken.txt";
+    // Gueltige Kopfzeile, aber ein regelwidriger doppelter Setzzug.
+    writeFile(path, "Weiss: A\nSchwarz: B\na1\na1\n");
+    GameResult result;
+    ASSERT_FALSE(evaluateLog(path, result));
+    std::remove(path.c_str());
 }
 
 int main() {

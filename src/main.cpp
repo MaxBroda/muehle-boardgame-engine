@@ -10,6 +10,7 @@
 #include "InputParser.h"
 #include "Move.h"
 #include "MoveLogger.h"
+#include "Statistics.h"
 #include "Types.h"
 
 // Einstiegspunkt der Konsolenanwendung. main verbindet die Bausteine zu einem
@@ -328,6 +329,55 @@ void continueGame(const ConsoleRenderer& renderer, const InputParser& parser) {
     runGameLoop(renderer, parser, game);
 }
 
+// Haengt Leerzeichen an, bis der Text die gewuenschte Breite hat. Fuer eine
+// einfache, ausgerichtete Tabelle ohne <iomanip>.
+std::string padRight(std::string text, std::size_t width) {
+    if (text.size() < width) {
+        text.append(width - text.size(), ' ');
+    }
+    return text;
+}
+
+// Menuepunkt 4: spieluebergreifende Statistik ueber alle gespeicherten Partien.
+void showStatistics(const ConsoleRenderer& renderer) {
+    std::vector<std::string> files = listSaveFiles();
+    if (files.empty()) {
+        renderer.showMessage("Keine gespeicherten Partien im Ordner '" +
+                             std::string(kSavesDir) + "'.");
+        return;
+    }
+    Statistics stats;
+    int skipped = 0;
+    for (const std::string& path : files) {
+        GameResult result;
+        if (evaluateLog(path, result)) {
+            stats.addResult(result);
+        } else {
+            ++skipped;  // nicht lesbar oder beschaedigt
+        }
+    }
+    if (stats.totalGames() == 0) {
+        renderer.showMessage("Keine auswertbaren Partien gefunden.");
+        return;
+    }
+
+    renderer.showMessage("");
+    renderer.showMessage("Statistik ueber " + std::to_string(stats.totalGames()) +
+                         " Partie(n):");
+    renderer.showMessage(padRight("Name", 16) + padRight("Partien", 9) +
+                         padRight("Siege", 7) + "Niederlagen");
+    for (const Statistics::Entry& e : stats.ranking()) {
+        renderer.showMessage(padRight(e.name, 16) +
+                             padRight(std::to_string(e.games), 9) +
+                             padRight(std::to_string(e.wins), 7) +
+                             std::to_string(e.losses));
+    }
+    if (skipped > 0) {
+        renderer.showMessage(std::to_string(skipped) +
+                             " Datei(en) nicht auswertbar, uebersprungen.");
+    }
+}
+
 // Menuepunkt 3: ein Protokoll wiedergeben, am Stueck oder schrittweise.
 void replayProtocol(const ConsoleRenderer& renderer) {
     std::string path = chooseSaveFile(renderer, "Wiedergeben");
@@ -399,7 +449,7 @@ int main() {
         } else if (choice == "3") {
             replayProtocol(renderer);
         } else if (choice == "4") {
-            renderer.showMessage("Statistik folgt in Sprint G.");
+            showStatistics(renderer);
         } else if (choice == "5" || choice == "q" || choice == "quit") {
             break;
         } else {
