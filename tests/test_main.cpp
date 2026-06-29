@@ -10,6 +10,7 @@
 #include "InputParser.h"
 #include "Move.h"
 #include "MoveLogger.h"
+#include "MoveTimer.h"
 #include "Player.h"
 #include "Statistics.h"
 
@@ -762,6 +763,32 @@ TEST(Statistics, lehntBeschaedigtesProtokollAb) {
     GameResult result;
     ASSERT_FALSE(evaluateLog(path, result));
     std::remove(path.c_str());
+}
+
+TEST(MoveTimer, summiertUndMitteltAufgenommeneZuege) {
+    MoveTimer timer;
+    timer.record(100);
+    timer.record(300);
+    timer.record(200);
+    ASSERT_EQ(timer.count(), 3);
+    ASSERT_EQ(timer.total(), 600);
+    ASSERT_EQ(timer.average(), 200);   // 600 / 3
+    ASSERT_EQ(timer.longest(), 300);
+}
+
+TEST(MoveTimer, leerUndUnplausibleWerte) {
+    MoveTimer timer;
+    // Ohne Zuege ist alles null, ohne Division durch null.
+    ASSERT_EQ(timer.count(), 0);
+    ASSERT_EQ(timer.total(), 0);
+    ASSERT_EQ(timer.average(), 0);
+    ASSERT_EQ(timer.longest(), 0);
+    // Eine negative Messung wird verworfen, ein gueltiger Wert danach zaehlt.
+    timer.record(-50);
+    ASSERT_EQ(timer.count(), 0);
+    timer.record(80);
+    ASSERT_EQ(timer.count(), 1);
+    ASSERT_EQ(timer.average(), 80);
 }
 
 int main() {

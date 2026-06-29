@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <filesystem>
 #include <iostream>
 #include <string>
@@ -10,6 +11,7 @@
 #include "InputParser.h"
 #include "Move.h"
 #include "MoveLogger.h"
+#include "MoveTimer.h"
 #include "Statistics.h"
 #include "Types.h"
 
@@ -269,9 +271,32 @@ void offerSave(const ConsoleRenderer& renderer, const Game& game) {
     }
 }
 
-// Spielt eine bereits angelegte Partie bis zum Ende oder bis zum Abbruch.
+// Zeigt die ausgewertete Bedenkzeit je Spieler nach dem Spielende.
+void showTiming(const ConsoleRenderer& renderer, const Game& game,
+                const MoveTimer& whiteTimer, const MoveTimer& blackTimer) {
+    auto report = [&](const MoveTimer& timer, Color c) {
+        if (timer.count() == 0) {
+            return;
+        }
+        renderer.showMessage(
+            game.playerByColor(c).name() + ": " +
+            std::to_string(timer.count()) + " Zuege, gesamt " +
+            std::to_string(timer.total()) + " ms, im Schnitt " +
+            std::to_string(timer.average()) + " ms, laengster " +
+            std::to_string(timer.longest()) + " ms");
+    };
+    renderer.showMessage("");
+    renderer.showMessage("Bedenkzeit:");
+    report(whiteTimer, Color::White);
+    report(blackTimer, Color::Black);
+}
+
+// Spielt eine bereits angelegte Partie bis zum Ende oder bis zum Abbruch. Misst
+// dabei die Bedenkzeit je Zug und ordnet sie dem Spieler zu, der am Zug war.
 void runGameLoop(const ConsoleRenderer& renderer, const InputParser& parser,
                  Game& game) {
+    MoveTimer whiteTimer;
+    MoveTimer blackTimer;
     while (!game.isGameOver()) {
         if (game.needsRemoval()) {
             if (!handleRemoval(renderer, parser, game)) {
@@ -280,7 +305,12 @@ void runGameLoop(const ConsoleRenderer& renderer, const InputParser& parser,
             continue;
         }
         showSituation(renderer, game);
+        Color mover = game.currentPlayer().color();
+        auto start = std::chrono::steady_clock::now();
         Turn result = handleMove(renderer, parser, game);
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                           std::chrono::steady_clock::now() - start)
+                           .count();
         if (result == Turn::EndOfInput) {
             return;
         }
@@ -289,6 +319,10 @@ void runGameLoop(const ConsoleRenderer& renderer, const InputParser& parser,
             renderer.showMessage("Zurueck zum Hauptmenue.");
             return;
         }
+        // Nur ein tatsaechlich ausgefuehrter Zug zaehlt; ein Undo nicht.
+        if (result == Turn::Applied) {
+            (mover == Color::White ? whiteTimer : blackTimer).record(elapsed);
+        }
     }
 
     renderer.drawBoard(game.board());
@@ -296,6 +330,7 @@ void runGameLoop(const ConsoleRenderer& renderer, const InputParser& parser,
     const std::string& name = game.playerByColor(w).name();
     renderer.showMessage("");
     renderer.showMessage("Spielende. Es gewinnt: " + name + ".");
+    showTiming(renderer, game, whiteTimer, blackTimer);
 }
 
 // Menuepunkt 1: neue Partie.
