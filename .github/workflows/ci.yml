@@ -1,0 +1,28 @@
+# CI-Pipeline: baut die Engine und laesst die Tests laufen.
+# Liegt unter .github/workflows/, weil GitHub Actions nur dort nach Workflows sucht.
+name: CI
+
+# Wann der Workflow laeuft: bei jedem Push auf main (z.B. nach einem Merge) und
+# bei jedem Pull Request. Der PR-Lauf ist der, der spaeter den Merge absichert.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-test:
+    # Frische, von GitHub bereitgestellte Linux-Maschine fuer jeden Lauf.
+    runs-on: ubuntu-latest
+    steps:
+      # Holt den Quellcode des ausloesenden Commits in die Maschine.
+      - uses: actions/checkout@v4
+
+      # Dieselben drei Schritte wie lokal: konfigurieren, bauen, testen.
+      - name: Konfigurieren
+        run: cmake -S . -B build
+
+      - name: Bauen
+        run: cmake --build build
+
+      - name: Tests
+        run: ctest --test-dir build --output-on-failure
