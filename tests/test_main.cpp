@@ -890,6 +890,21 @@ TEST(EventLog, aktivSchreibtNummerierteZeilen) {
     std::remove(path.c_str());
 }
 
+TEST(MoveTimer, formatiertSekundenMitZweiNachkommastellen) {
+    // Glatte und gerundete Werte.
+    ASSERT_EQ(MoveTimer::formatSeconds(56160), std::string("56.16 s"));
+    ASSERT_EQ(MoveTimer::formatSeconds(1000), std::string("1.00 s"));
+    ASSERT_EQ(MoveTimer::formatSeconds(56166), std::string("56.17 s")); // gerundet
+    // Fuehrende Null in den Nachkommastellen.
+    ASSERT_EQ(MoveTimer::formatSeconds(2050), std::string("2.05 s"));
+}
+
+TEST(MoveTimer, formatiertRandwerte) {
+    // Null und ein negativer (unplausibler) Wert ergeben sauber 0.00 s.
+    ASSERT_EQ(MoveTimer::formatSeconds(0), std::string("0.00 s"));
+    ASSERT_EQ(MoveTimer::formatSeconds(-100), std::string("0.00 s"));
+}
+
 int main() {
     return ::testing::runAll();
 }

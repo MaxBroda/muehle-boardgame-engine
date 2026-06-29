@@ -1,5 +1,7 @@
 #pragma once
 
+#include <string>
+
 namespace muehle {
 
 // Sammelt die Dauer einzelner Zuege in Millisekunden und wertet sie aus. Die
@@ -23,6 +25,12 @@ public:
 
     // Laengste einzelne Zugdauer, 0 ohne Zuege.
     long long longest() const;
+
+    // Formatiert eine Dauer in Millisekunden als Sekunden mit zwei Nachkomma-
+    // stellen und Einheit, z.B. 56160 -> "56.16 s". Statisch, damit dieselbe
+    // Darstellung ueberall (Auswertung wie Live-Anzeige) genutzt und unabhaengig
+    // getestet werden kann.
+    static std::string formatSeconds(long long millis);
 
 private:
     int count_ = 0;

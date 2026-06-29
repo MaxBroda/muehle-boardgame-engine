@@ -312,9 +312,9 @@ void showTiming(const ConsoleRenderer& renderer, const Game& game,
         renderer.showMessage(
             game.playerByColor(c).name() + ": " +
             std::to_string(timer.count()) + " Zuege, gesamt " +
-            std::to_string(timer.total()) + " ms, im Schnitt " +
-            std::to_string(timer.average()) + " ms, laengster " +
-            std::to_string(timer.longest()) + " ms");
+            MoveTimer::formatSeconds(timer.total()) + ", im Schnitt " +
+            MoveTimer::formatSeconds(timer.average()) + ", laengster " +
+            MoveTimer::formatSeconds(timer.longest()));
     };
     renderer.showMessage("");
     renderer.showMessage("Bedenkzeit:");
