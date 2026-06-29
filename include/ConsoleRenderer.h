@@ -22,6 +22,12 @@ public:
 
     // Liest eine Eingabezeile von der Konsole.
     std::string promptInput() const;
+
+    // Liefert das Gitterzeichen fuer einen Knotenpunkt anhand seiner Anschluesse
+    // (oben, unten, links, rechts). Damit wird das Box-Drawing-Brett rechnerisch
+    // aus der Topologie gesetzt, statt Zeichen von Hand zu platzieren. Oeffentlich
+    // und statisch, damit die Auswahl unabhaengig vom Zeichnen testbar ist.
+    static const char* nodeGlyph(bool up, bool down, bool left, bool right);
 };
 
 } // namespace muehle

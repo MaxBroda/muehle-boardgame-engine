@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "Board.h"
+#include "ConsoleRenderer.h"
 #include "Game.h"
 #include "InputParser.h"
 #include "Move.h"
@@ -789,6 +790,27 @@ TEST(MoveTimer, leerUndUnplausibleWerte) {
     timer.record(80);
     ASSERT_EQ(timer.count(), 1);
     ASSERT_EQ(timer.average(), 80);
+}
+
+TEST(BoxArt, waehltKnotenNachAnschluessen) {
+    // up, down, left, right
+    ASSERT_EQ(std::string(ConsoleRenderer::nodeGlyph(false, true, false, true)),
+              std::string("┌"));  // obere linke Ecke
+    ASSERT_EQ(std::string(ConsoleRenderer::nodeGlyph(true, false, true, false)),
+              std::string("┘"));  // untere rechte Ecke
+    ASSERT_EQ(std::string(ConsoleRenderer::nodeGlyph(true, true, true, true)),
+              std::string("┼"));  // vollstaendige Kreuzung
+    ASSERT_EQ(std::string(ConsoleRenderer::nodeGlyph(false, true, true, true)),
+              std::string("┬"));  // T-Stueck nach unten
+}
+
+TEST(BoxArt, faelltBeiUngueltigenAnschluessenAufMittelpunktZurueck) {
+    // Gar kein Anschluss oder nur eine einzelne Richtung kommt auf dem Brett
+    // nicht vor und ergibt den neutralen Mittelpunkt.
+    ASSERT_EQ(std::string(ConsoleRenderer::nodeGlyph(false, false, false, false)),
+              std::string("·"));
+    ASSERT_EQ(std::string(ConsoleRenderer::nodeGlyph(true, false, false, false)),
+              std::string("·"));
 }
 
 int main() {
