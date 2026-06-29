@@ -35,7 +35,9 @@ spielübergreifende Statistik und Beenden. Während eines Zuges sind möglich:
 - `u` nimmt den letzten Zug zurück (Undo)
 - `q` beendet die Partie, danach kann der Spielstand gesichert werden
 
-Nach dem Spielende wird die Bedenkzeit je Spieler ausgewertet.
+Während des Spiels steht die Bedenkzeit beider Spieler neben dem Brett (Gesamt
+und letzter Zug), nach dem Spielende folgt die Auswertung. Eine beendete Partie
+wird automatisch als Protokoll gesichert und fließt in die Statistik ein.
 
 ## Stand
 
