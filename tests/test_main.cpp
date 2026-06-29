@@ -840,10 +840,11 @@ TEST(CommandLine, erkenntLoggingFlagUndPfad) {
     ASSERT_FALSE(none.logging);
     ASSERT_FALSE(none.help);
 
-    // Reines Flag schaltet das Logging mit Standardpfad ein.
+    // Reines Flag schaltet das Logging ein und ueberlaesst den Namen der
+    // Anwendung (logPath bleibt leer).
     CommandLineOptions on = parseCommandLine({"--log"});
     ASSERT_TRUE(on.logging);
-    ASSERT_EQ(on.logPath, std::string("data/muehle.log"));
+    ASSERT_TRUE(on.logPath.empty());
 
     // Mit eigenem Pfad.
     CommandLineOptions path = parseCommandLine({"--log=data/partie.log"});

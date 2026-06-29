@@ -23,7 +23,7 @@ CommandLineOptions parseCommandLine(const std::vector<std::string>& args) {
         } else if (startsWith(arg, logWithPath)) {
             options.logging = true;
             std::string path = arg.substr(logWithPath.size());
-            // Ein leerer Pfad (--log=) behaelt die Standarddatei.
+            // Ein leerer Pfad (--log=) faellt auf den automatischen Namen zurueck.
             if (!path.empty()) {
                 options.logPath = path;
             }

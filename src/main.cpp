@@ -165,14 +165,15 @@ std::string makeSavePath(std::string name) {
     return std::string(kSavesDir) + "/" + name;
 }
 
-// Baut einen eindeutigen Protokollpfad mit Zeitstempel im Speicherordner, damit
-// jede beendete Partie ohne Rueckfrage und ohne eine fruehere zu ueberschreiben
-// abgelegt werden kann.
-std::string timestampedSavePath() {
+// Baut einen eindeutigen Pfad mit Zeitstempel im Speicherordner, etwa
+// "data/partie_20260629_153012.txt". So lassen sich Partien und Logs ohne
+// Rueckfrage und ohne eine fruehere Datei zu ueberschreiben ablegen. Die
+// Endung steuert auch, ob die Statistik die Datei beachtet: nur .txt zaehlt.
+std::string timestampedPath(const std::string& prefix, const std::string& ext) {
     std::time_t now = std::time(nullptr);
     char stamp[32] = {0};
     std::strftime(stamp, sizeof(stamp), "%Y%m%d_%H%M%S", std::localtime(&now));
-    return std::string(kSavesDir) + "/partie_" + stamp + ".txt";
+    return std::string(kSavesDir) + "/" + prefix + "_" + stamp + ext;
 }
 
 // Zeigt den Kopf eines Zuges: Brett, Spieler am Zug, Phase und Steinzahlen.
@@ -378,7 +379,7 @@ void runGameLoop(const ConsoleRenderer& renderer, const InputParser& parser,
     // in die spieluebergreifende Statistik einfliesst, auch ohne manuelles
     // Speichern zwischendurch.
     ensureSavesDir();
-    std::string path = timestampedSavePath();
+    std::string path = timestampedPath("partie", ".txt");
     MoveLogger logger;
     if (logger.saveSnapshot(path, game)) {
         renderer.showMessage("Partie als Protokoll gespeichert: " + path);
@@ -555,7 +556,8 @@ int main(int argc, char** argv) {
     CommandLineOptions options = parseCommandLine(args);
     if (options.help) {
         renderer.showMessage("Aufruf: muehle [--log[=datei]] [-h|--help]");
-        renderer.showMessage("  --log[=datei]  erweiterte Protokollierung in eine Logdatei");
+        renderer.showMessage("  --log          erweiterte Protokollierung (Dateiname automatisch)");
+        renderer.showMessage("  --log=datei    erweiterte Protokollierung in eine eigene Datei");
         renderer.showMessage("  -h, --help     diese Hilfe");
         return 0;
     }
@@ -569,11 +571,16 @@ int main(int argc, char** argv) {
     EventLog eventLog;
     if (options.logging) {
         ensureSavesDir();
-        if (eventLog.open(options.logPath)) {
-            renderer.showMessage("Erweiterte Protokollierung aktiv: " +
-                                 options.logPath);
+        // Ohne ausdruecklichen Pfad automatisch einen eindeutigen Namen je
+        // Sitzung vergeben (eigene Endung, damit die Statistik ihn nicht als
+        // Spielprotokoll liest).
+        std::string logPath =
+            options.logPath.empty() ? timestampedPath("log", ".log")
+                                    : options.logPath;
+        if (eventLog.open(logPath)) {
+            renderer.showMessage("Erweiterte Protokollierung aktiv: " + logPath);
         } else {
-            renderer.showMessage("Logdatei '" + options.logPath +
+            renderer.showMessage("Logdatei '" + logPath +
                                  "' konnte nicht geoeffnet werden.");
         }
     }
