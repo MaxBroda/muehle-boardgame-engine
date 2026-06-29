@@ -799,6 +799,15 @@ TEST(MoveTimer, summiertUndMitteltAufgenommeneZuege) {
     ASSERT_EQ(timer.last(), 200);      // der zuletzt aufgenommene Wert
 }
 
+TEST(MoveTimer, durchschnittWirdGerundetNichtAbgeschnitten) {
+    MoveTimer timer;
+    timer.record(100);
+    timer.record(101);
+    timer.record(101);  // Summe 302, 302/3 = 100,67
+    // Kaufmaennisch gerundet ergibt das 101, abgeschnitten waeren es 100.
+    ASSERT_EQ(timer.average(), 101);
+}
+
 TEST(MoveTimer, leerUndUnplausibleWerte) {
     MoveTimer timer;
     // Ohne Zuege ist alles null, ohne Division durch null.

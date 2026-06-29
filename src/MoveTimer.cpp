@@ -26,7 +26,9 @@ long long MoveTimer::average() const {
     if (count_ == 0) {
         return 0;
     }
-    return total_ / count_;
+    // Kaufmaennisch auf ganze Millisekunden runden, passend zur Doku, statt
+    // bei der Ganzzahldivision einfach abzuschneiden.
+    return (total_ + count_ / 2) / count_;
 }
 
 long long MoveTimer::longest() const {

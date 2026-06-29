@@ -18,7 +18,7 @@ cmake -S . -B build
 cmake --build build
 
 ./build/muehle              # Anwendung starten
-./build/muehle --log        # mit erweiterter Protokollierung (data/muehle.log)
+./build/muehle --log        # erweiterte Protokollierung (Datei automatisch in data/)
 ./build/muehle --log=pfad   # Protokollierung in eine eigene Datei
 ./build/muehle --help       # Aufruf und Optionen anzeigen
 ./build/muehle_tests        # Tests direkt ausführen

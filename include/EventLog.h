@@ -12,8 +12,9 @@ namespace muehle {
 // aktiv ist, tun alle Aufrufe nichts.
 class EventLog {
 public:
-    // Aktiviert das Log und oeffnet die Datei zum Anhaengen. Liefert false, wenn
-    // die Datei nicht geoeffnet werden kann; das Log bleibt dann inaktiv.
+    // Aktiviert das Log und legt die Datei frisch an (eine Datei je Sitzung).
+    // Liefert false, wenn die Datei nicht geoeffnet werden kann; das Log bleibt
+    // dann inaktiv.
     bool open(const std::string& path);
 
     // Ist das Log aktiv?

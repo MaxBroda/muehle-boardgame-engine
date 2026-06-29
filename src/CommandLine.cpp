@@ -18,7 +18,7 @@ CommandLineOptions parseCommandLine(const std::vector<std::string>& args) {
     for (const std::string& arg : args) {
         if (arg == "-h" || arg == "--help") {
             options.help = true;
-        } else if (arg == "--log" || arg == "-l") {
+        } else if (arg == "--log") {
             options.logging = true;
         } else if (startsWith(arg, logWithPath)) {
             options.logging = true;

@@ -5,7 +5,10 @@
 namespace muehle {
 
 bool EventLog::open(const std::string& path) {
-    out_.open(path, std::ios::app);
+    // Eine Logdatei steht fuer genau eine Sitzung, daher frisch anlegen statt
+    // anzuhaengen. So gibt es genau eine Kopfzeile und eine durchgehende
+    // Nummerierung ab 0001, auch wenn ein bestehender Pfad angegeben wird.
+    out_.open(path, std::ios::trunc);
     active_ = static_cast<bool>(out_);
     if (active_) {
         out_ << "# Muehle-Ereignislog\n";

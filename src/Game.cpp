@@ -245,10 +245,14 @@ bool Game::undoLastMove() {
     history_.clear();
 
     // Die verbliebenen Zuege ueber dieselbe Validierung erneut abspielen. Sie
-    // waren schon einmal gueltig, koennen hier also nicht scheitern.
+    // waren schon einmal gueltig. Schlaegt ein Schritt wider Erwarten doch fehl,
+    // ist die History inkonsistent; dann ehrlich false melden, statt einen nur
+    // halb aufgebauten Zustand als Erfolg auszugeben.
     std::string reason;
     for (const Move& m : remaining) {
-        replayLogged(m, reason);
+        if (!replayLogged(m, reason)) {
+            return false;
+        }
     }
     return true;
 }
