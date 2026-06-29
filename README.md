@@ -1,5 +1,7 @@
 # Mühle-Engine (C++)
 
+[![CI](https://github.com/MaxBroda/muehle-boardgame-engine/actions/workflows/ci.yml/badge.svg)](https://github.com/MaxBroda/muehle-boardgame-engine/actions/workflows/ci.yml)
+
 Konsolenbasierte Spiele-Engine für das Brettspiel Mühle. Teil des IU-Portfolios
 DLBMINPAPCC01. Entwickelt in C++17, ausschließlich mit der C++-Standardbibliothek,
 Build über CMake.
@@ -38,6 +40,12 @@ spielübergreifende Statistik und Beenden. Während eines Zuges sind möglich:
 Während des Spiels steht die Bedenkzeit beider Spieler neben dem Brett (Gesamt
 und letzter Zug), nach dem Spielende folgt die Auswertung. Eine beendete Partie
 wird automatisch als Protokoll gesichert und fließt in die Statistik ein.
+
+## Continuous Integration
+
+Jeder Push und jeder Pull Request wird über eine GitHub-Actions-Pipeline gebaut
+und getestet (`.github/workflows/ci.yml`). Der Branch `main` ist über ein Ruleset
+geschützt und nur über einen Pull Request mit grüner Pipeline erreichbar.
 
 ## Stand
 
