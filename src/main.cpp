@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cctype>
 #include <chrono>
+#include <ctime>
 #include <filesystem>
 #include <iostream>
 #include <string>
@@ -162,6 +163,16 @@ std::string makeSavePath(std::string name) {
         name += ".txt";
     }
     return std::string(kSavesDir) + "/" + name;
+}
+
+// Baut einen eindeutigen Protokollpfad mit Zeitstempel im Speicherordner, damit
+// jede beendete Partie ohne Rueckfrage und ohne eine fruehere zu ueberschreiben
+// abgelegt werden kann.
+std::string timestampedSavePath() {
+    std::time_t now = std::time(nullptr);
+    char stamp[32] = {0};
+    std::strftime(stamp, sizeof(stamp), "%Y%m%d_%H%M%S", std::localtime(&now));
+    return std::string(kSavesDir) + "/partie_" + stamp + ".txt";
 }
 
 // Zeigt den Kopf eines Zuges: Brett, Spieler am Zug, Phase und Steinzahlen.
@@ -362,6 +373,19 @@ void runGameLoop(const ConsoleRenderer& renderer, const InputParser& parser,
     renderer.showMessage("");
     renderer.showMessage("Spielende. Es gewinnt: " + name + ".");
     showTiming(renderer, game, whiteTimer, blackTimer);
+
+    // Eine zu Ende gespielte Partie automatisch als Protokoll sichern, damit sie
+    // in die spieluebergreifende Statistik einfliesst, auch ohne manuelles
+    // Speichern zwischendurch.
+    ensureSavesDir();
+    std::string path = timestampedSavePath();
+    MoveLogger logger;
+    if (logger.saveSnapshot(path, game)) {
+        renderer.showMessage("Partie als Protokoll gespeichert: " + path);
+    }
+    if (eventLog.isActive()) {
+        eventLog.log("Partie beendet, Sieger: " + name);
+    }
 }
 
 // Menuepunkt 1: neue Partie.
@@ -423,23 +447,34 @@ void showStatistics(const ConsoleRenderer& renderer) {
         return;
     }
     Statistics stats;
-    int skipped = 0;
+    int skipped = 0;  // nicht lesbar oder beschaedigt
+    int open = 0;     // offener Zwischenstand ohne Ergebnis
     for (const std::string& path : files) {
         GameResult result;
-        if (evaluateLog(path, result)) {
-            stats.addResult(result);
-        } else {
-            ++skipped;  // nicht lesbar oder beschaedigt
+        if (!evaluateLog(path, result)) {
+            ++skipped;
+            continue;
         }
+        // Nur abgeschlossene Partien fliessen in die Sieg-Statistik ein; ein
+        // gespeicherter Zwischenstand hat keinen Gewinner und wird nur gezaehlt.
+        if (result.winner == Color::None) {
+            ++open;
+            continue;
+        }
+        stats.addResult(result);
     }
     if (stats.totalGames() == 0) {
-        renderer.showMessage("Keine auswertbaren Partien gefunden.");
+        renderer.showMessage("Keine abgeschlossenen Partien gefunden.");
+        if (open > 0) {
+            renderer.showMessage(std::to_string(open) +
+                                 " offene(r) Zwischenstand(e) nicht gewertet.");
+        }
         return;
     }
 
     renderer.showMessage("");
     renderer.showMessage("Statistik ueber " + std::to_string(stats.totalGames()) +
-                         " Partie(n):");
+                         " abgeschlossene Partie(n):");
     renderer.showMessage(padRight("Name", 16) + padRight("Partien", 9) +
                          padRight("Siege", 7) + "Niederlagen");
     for (const Statistics::Entry& e : stats.ranking()) {
@@ -447,6 +482,10 @@ void showStatistics(const ConsoleRenderer& renderer) {
                              padRight(std::to_string(e.games), 9) +
                              padRight(std::to_string(e.wins), 7) +
                              std::to_string(e.losses));
+    }
+    if (open > 0) {
+        renderer.showMessage(std::to_string(open) +
+                             " offene(r) Zwischenstand(e) nicht gewertet.");
     }
     if (skipped > 0) {
         renderer.showMessage(std::to_string(skipped) +

@@ -760,6 +760,24 @@ TEST(Statistics, wertetBeendetePartieAusProtokollAus) {
     std::remove(path.c_str());
 }
 
+TEST(Statistics, offenerZwischenstandHatKeinenGewinner) {
+    const std::string path = "/tmp/muehle_test_stats_open.txt";
+    // Nur wenige Setzzuege: die Partie ist noch lange nicht entschieden.
+    Game game("Anna", "Bert");
+    place(game, "a1");
+    place(game, "a7");
+    place(game, "d1");
+    ASSERT_FALSE(game.isGameOver());
+    MoveLogger logger;
+    ASSERT_TRUE(logger.saveSnapshot(path, game));
+
+    GameResult result;
+    ASSERT_TRUE(evaluateLog(path, result));
+    // Lesbar und gueltig, aber ohne Sieger: zaehlt nicht in die Sieg-Statistik.
+    ASSERT_TRUE(result.winner == Color::None);
+    std::remove(path.c_str());
+}
+
 TEST(Statistics, lehntBeschaedigtesProtokollAb) {
     const std::string path = "/tmp/muehle_test_stats_broken.txt";
     // Gueltige Kopfzeile, aber ein regelwidriger doppelter Setzzug.
