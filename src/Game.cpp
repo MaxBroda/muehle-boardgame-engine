@@ -264,6 +264,56 @@ std::vector<Field> Game::removableStones() const {
     return removableTargets(opponent(toMove_));
 }
 
+std::vector<Move> Game::legalMoves() const {
+    std::vector<Move> out;
+    if (isGameOver()) {
+        return out;
+    }
+    std::string reason;
+
+    // Steht ein Entfernen aus, sind die "Zuege" die entfernbaren Steine.
+    if (pendingRemoval_) {
+        for (Field f : removableStones()) {
+            Move m;
+            m.removed = f;
+            out.push_back(m);
+        }
+        return out;
+    }
+
+    Phase phase = currentPlayer().currentPhase();
+    if (phase == Phase::Placing) {
+        for (int t = 0; t < kFieldCount; ++t) {
+            Move m;
+            m.type = MoveType::Place;
+            m.to = t;
+            if (validateMove(m, reason)) {
+                out.push_back(m);
+            }
+        }
+        return out;
+    }
+
+    // Zieh- und Springphase: jeden eigenen Stein gegen jedes Feld pruefen lassen.
+    MoveType type = (phase == Phase::Moving) ? MoveType::Slide : MoveType::Jump;
+    Color c = currentPlayer().color();
+    for (int f = 0; f < kFieldCount; ++f) {
+        if (board_.colorAt(f) != c) {
+            continue;
+        }
+        for (int t = 0; t < kFieldCount; ++t) {
+            Move m;
+            m.type = type;
+            m.from = f;
+            m.to = t;
+            if (validateMove(m, reason)) {
+                out.push_back(m);
+            }
+        }
+    }
+    return out;
+}
+
 bool Game::isGameOver() const {
     // Mitten in einem Zug (Muehle geschlossen, Entfernen offen) endet nichts.
     if (pendingRemoval_) {

@@ -59,6 +59,12 @@ public:
     // sonst leer. Dient der Eingabeaufforderung und dem Hinweis-Modus.
     std::vector<Field> removableStones() const;
 
+    // Alle im aktuellen Zustand gueltigen Zuege fuer den Hinweis-Modus. Steht
+    // ein Entfernen aus, sind es die entfernbaren Steine; sonst alle zur Phase
+    // passenden Setz-, Zieh- oder Springzuege. Geht ueber dieselbe Validierung
+    // wie ein echter Zug, kann also nie von den Spielregeln abweichen.
+    std::vector<Move> legalMoves() const;
+
     // Ist die Partie beendet?
     bool isGameOver() const;
 

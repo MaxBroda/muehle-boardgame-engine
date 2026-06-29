@@ -645,6 +645,42 @@ TEST(Undo, lehntOhneZugUndWaehrendEntfernenAb) {
     ASSERT_FALSE(game.undoLastMove());
 }
 
+TEST(Hint, listetAlleSetzzuegeUndSchrumpftMitJedemStein) {
+    Game game("Weiss", "Schwarz");
+    // Auf leerem Brett ist jedes der 24 Felder ein gueltiger Setzzug.
+    ASSERT_EQ(static_cast<int>(game.legalMoves().size()), kFieldCount);
+    place(game, "a1");
+    // Ein Feld ist belegt, also bleiben 23 Setzzuege fuer Schwarz.
+    ASSERT_EQ(static_cast<int>(game.legalMoves().size()), kFieldCount - 1);
+    // In der Ziehphase muss der Hinweis mit der unabhaengig gezaehlten Liste
+    // gueltiger Aktionen uebereinstimmen.
+    Game moving("Weiss", "Schwarz");
+    playMillFreeOpening(moving);
+    ASSERT_TRUE(moving.currentPlayer().currentPhase() == Phase::Moving);
+    ASSERT_EQ(static_cast<int>(moving.legalMoves().size()),
+              static_cast<int>(legalActions(moving).size()));
+    ASSERT_FALSE(moving.legalMoves().empty());
+}
+
+TEST(Hint, zeigtWaehrendEntfernenDieEntfernbarenSteine) {
+    Game game("Weiss", "Schwarz");
+    place(game, "a1");  // W
+    place(game, "a7");  // B
+    place(game, "d1");  // W
+    place(game, "a4");  // B
+    place(game, "g1");  // W schliesst Muehle
+    ASSERT_TRUE(game.needsRemoval());
+    std::vector<Move> hints = game.legalMoves();
+    // Genauso viele Hinweise wie entfernbare Steine, und jeder Hinweis ist ein
+    // Entfernen (kein Zielfeld, kein Quellfeld).
+    ASSERT_EQ(static_cast<int>(hints.size()),
+              static_cast<int>(game.removableStones().size()));
+    ASSERT_FALSE(hints.empty());
+    ASSERT_EQ(hints.front().to, -1);
+    ASSERT_EQ(hints.front().from, -1);
+    ASSERT_TRUE(hints.front().removed >= 0);
+}
+
 int main() {
     return ::testing::runAll();
 }

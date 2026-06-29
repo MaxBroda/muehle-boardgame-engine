@@ -64,6 +64,34 @@ bool isAllDigits(const std::string& s) {
     return true;
 }
 
+// Kurze, lesbare Notation eines Zugs fuer den Hinweis-Modus. Setzzug als
+// einzelnes Feld, Zieh- oder Springzug als "von-nach", Entfernen als "x feld".
+std::string describeMove(const Move& m) {
+    if (m.removed != -1 && m.to == -1) {
+        return "x " + fieldName(m.removed);
+    }
+    if (m.from == -1) {
+        return fieldName(m.to);
+    }
+    return fieldName(m.from) + "-" + fieldName(m.to);
+}
+
+// Zeigt alle aktuell gueltigen Zuege als durchgehende Zeile.
+void showHints(const ConsoleRenderer& renderer, const Game& game) {
+    std::vector<Move> moves = game.legalMoves();
+    if (moves.empty()) {
+        renderer.showMessage("Keine gueltigen Zuege.");
+        return;
+    }
+    std::string list;
+    for (const Move& m : moves) {
+        if (!list.empty()) list += ", ";
+        list += describeMove(m);
+    }
+    renderer.showMessage("Moegliche Zuege (" + std::to_string(moves.size()) +
+                         "): " + list);
+}
+
 // Klartextname einer Phase fuer die Anzeige.
 std::string phaseName(Phase p) {
     switch (p) {
@@ -179,9 +207,9 @@ Turn handleMove(const ConsoleRenderer& renderer, const InputParser& parser,
                 Game& game) {
     Phase phase = game.currentPlayer().currentPhase();
     if (phase == Phase::Placing) {
-        renderer.showMessage("Zug (Feld zum Setzen, z.B. d3), 'u' Undo oder 'q' Beenden:");
+        renderer.showMessage("Zug (Feld z.B. d3), 'h' Hinweis, 'u' Undo oder 'q' Beenden:");
     } else {
-        renderer.showMessage("Zug (von-nach, z.B. a1-a4), 'u' Undo oder 'q' Beenden:");
+        renderer.showMessage("Zug (von-nach z.B. a1-a4), 'h' Hinweis, 'u' Undo oder 'q' Beenden:");
     }
     while (true) {
         std::string line = renderer.promptInput();
@@ -190,6 +218,10 @@ Turn handleMove(const ConsoleRenderer& renderer, const InputParser& parser,
         }
         if (line == "q" || line == "quit") {
             return Turn::Quit;
+        }
+        if (line == "h" || line == "hint") {
+            showHints(renderer, game);
+            continue;
         }
         if (line == "u" || line == "undo") {
             if (game.undoLastMove()) {
