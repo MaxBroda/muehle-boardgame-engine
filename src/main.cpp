@@ -28,7 +28,7 @@ namespace fs = std::filesystem;
 const char* kSavesDir = "data";
 
 // Ausgang eines Zug-Dialogs.
-enum class Turn { Applied, Quit, EndOfInput };
+enum class Turn { Applied, Undone, Quit, EndOfInput };
 
 // Legt den Speicherordner an, falls er fehlt.
 void ensureSavesDir() {
@@ -179,9 +179,9 @@ Turn handleMove(const ConsoleRenderer& renderer, const InputParser& parser,
                 Game& game) {
     Phase phase = game.currentPlayer().currentPhase();
     if (phase == Phase::Placing) {
-        renderer.showMessage("Zug (Feld zum Setzen, z.B. d3) oder 'q' zum Beenden:");
+        renderer.showMessage("Zug (Feld zum Setzen, z.B. d3), 'u' Undo oder 'q' Beenden:");
     } else {
-        renderer.showMessage("Zug (von-nach, z.B. a1-a4) oder 'q' zum Beenden:");
+        renderer.showMessage("Zug (von-nach, z.B. a1-a4), 'u' Undo oder 'q' Beenden:");
     }
     while (true) {
         std::string line = renderer.promptInput();
@@ -190,6 +190,14 @@ Turn handleMove(const ConsoleRenderer& renderer, const InputParser& parser,
         }
         if (line == "q" || line == "quit") {
             return Turn::Quit;
+        }
+        if (line == "u" || line == "undo") {
+            if (game.undoLastMove()) {
+                renderer.showMessage("Letzter Zug zurueckgenommen.");
+                return Turn::Undone;
+            }
+            renderer.showMessage("Kein Zug zum Zuruecknehmen vorhanden.");
+            continue;
         }
         Move m;
         if (!parser.parseMove(line, phase, m)) {

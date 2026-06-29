@@ -592,6 +592,59 @@ TEST(MoveLogger, kopfzeileOhneBeideNamenIstUngueltig) {
     std::remove(path.c_str());
 }
 
+// --- Sprint G: Zusatzfeatures -----------------------------------------------
+
+TEST(Undo, nimmtLetztenSetzzugZurueck) {
+    Game game("Weiss", "Schwarz");
+    place(game, "a1");  // W
+    place(game, "a7");  // B, jetzt ist wieder Weiss am Zug
+    ASSERT_EQ(static_cast<int>(game.history().size()), 2);
+    ASSERT_EQ(game.currentPlayer().color(), Color::White);
+
+    ASSERT_TRUE(game.undoLastMove());
+    // Der schwarze Stein ist verschwunden, Schwarz ist wieder am Zug.
+    ASSERT_EQ(static_cast<int>(game.history().size()), 1);
+    ASSERT_EQ(game.board().colorAt(idx("a7")), Color::None);
+    ASSERT_EQ(game.board().colorAt(idx("a1")), Color::White);
+    ASSERT_EQ(game.currentPlayer().color(), Color::Black);
+}
+
+TEST(Undo, stelltGeschlosseneMuehleUndEntferntenSteinWiederHer) {
+    Game game("Weiss", "Schwarz");
+    place(game, "a1");        // W
+    place(game, "a7");        // B
+    place(game, "d1");        // W
+    place(game, "a4");        // B
+    place(game, "g1");        // W schliesst a1-d1-g1
+    removeStone(game, "a7");  // Weiss entfernt a7, dann ist Schwarz am Zug
+    ASSERT_EQ(game.board().colorAt(idx("a7")), Color::None);
+    ASSERT_EQ(game.currentPlayer().color(), Color::Black);
+
+    // Undo nimmt den gesamten Muehlen-Zug inklusive Entfernen zurueck.
+    ASSERT_TRUE(game.undoLastMove());
+    ASSERT_EQ(game.board().colorAt(idx("g1")), Color::None);  // Setzzug weg
+    ASSERT_EQ(game.board().colorAt(idx("a7")), Color::Black); // Stein zurueck
+    ASSERT_EQ(static_cast<int>(game.history().size()), 4);
+    ASSERT_EQ(game.currentPlayer().color(), Color::White);
+    ASSERT_FALSE(game.needsRemoval());
+}
+
+TEST(Undo, lehntOhneZugUndWaehrendEntfernenAb) {
+    Game game("Weiss", "Schwarz");
+    // Ohne jeden Zug gibt es nichts zurueckzunehmen.
+    ASSERT_FALSE(game.undoLastMove());
+
+    // Eine Muehle schliessen, ohne den Stein schon zu entfernen.
+    place(game, "a1");  // W
+    place(game, "a7");  // B
+    place(game, "d1");  // W
+    place(game, "a4");  // B
+    place(game, "g1");  // W schliesst Muehle, Entfernen steht aus
+    ASSERT_TRUE(game.needsRemoval());
+    // Mitten im Zug (Entfernen offen) ist kein Undo moeglich.
+    ASSERT_FALSE(game.undoLastMove());
+}
+
 int main() {
     return ::testing::runAll();
 }

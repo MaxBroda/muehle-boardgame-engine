@@ -226,6 +226,33 @@ bool Game::replayLogged(const Move& logged, std::string& reason) {
     return true;
 }
 
+bool Game::undoLastMove() {
+    // Ein halber Zug (Muehle geschlossen, Entfernen offen) laesst sich nicht als
+    // Ganzes zuruecknehmen, und ohne Zug gibt es nichts rueckgaengig zu machen.
+    if (pendingRemoval_ || history_.empty()) {
+        return false;
+    }
+
+    // Alle Zuege bis auf den letzten merken und das Spiel von vorn aufbauen.
+    std::vector<Move> remaining = history_;
+    remaining.pop_back();
+
+    board_.reset();
+    white_ = Player(Color::White, white_.name());
+    black_ = Player(Color::Black, black_.name());
+    toMove_ = Color::White;
+    pendingRemoval_ = false;
+    history_.clear();
+
+    // Die verbliebenen Zuege ueber dieselbe Validierung erneut abspielen. Sie
+    // waren schon einmal gueltig, koennen hier also nicht scheitern.
+    std::string reason;
+    for (const Move& m : remaining) {
+        replayLogged(m, reason);
+    }
+    return true;
+}
+
 bool Game::needsRemoval() const {
     return pendingRemoval_;
 }
