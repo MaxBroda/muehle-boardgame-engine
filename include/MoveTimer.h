@@ -26,6 +26,10 @@ public:
     // Laengste einzelne Zugdauer, 0 ohne Zuege.
     long long longest() const;
 
+    // Dauer des zuletzt aufgenommenen Zugs, 0 ohne Zuege. Fuer die Live-Anzeige
+    // neben dem Brett.
+    long long last() const;
+
     // Formatiert eine Dauer in Millisekunden als Sekunden mit zwei Nachkomma-
     // stellen und Einheit, z.B. 56160 -> "56.16 s". Statisch, damit dieselbe
     // Darstellung ueberall (Auswertung wie Live-Anzeige) genutzt und unabhaengig
@@ -36,6 +40,7 @@ private:
     int count_ = 0;
     long long total_ = 0;
     long long longest_ = 0;
+    long long last_ = 0;
 };
 
 } // namespace muehle

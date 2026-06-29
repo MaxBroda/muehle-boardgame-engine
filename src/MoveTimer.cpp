@@ -8,6 +8,7 @@ void MoveTimer::record(long long millis) {
     }
     ++count_;
     total_ += millis;
+    last_ = millis;
     if (millis > longest_) {
         longest_ = millis;
     }
@@ -30,6 +31,10 @@ long long MoveTimer::average() const {
 
 long long MoveTimer::longest() const {
     return longest_;
+}
+
+long long MoveTimer::last() const {
+    return last_;
 }
 
 std::string MoveTimer::formatSeconds(long long millis) {

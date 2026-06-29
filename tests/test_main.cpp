@@ -796,6 +796,7 @@ TEST(MoveTimer, summiertUndMitteltAufgenommeneZuege) {
     ASSERT_EQ(timer.total(), 600);
     ASSERT_EQ(timer.average(), 200);   // 600 / 3
     ASSERT_EQ(timer.longest(), 300);
+    ASSERT_EQ(timer.last(), 200);      // der zuletzt aufgenommene Wert
 }
 
 TEST(MoveTimer, leerUndUnplausibleWerte) {
@@ -805,12 +806,15 @@ TEST(MoveTimer, leerUndUnplausibleWerte) {
     ASSERT_EQ(timer.total(), 0);
     ASSERT_EQ(timer.average(), 0);
     ASSERT_EQ(timer.longest(), 0);
+    ASSERT_EQ(timer.last(), 0);
     // Eine negative Messung wird verworfen, ein gueltiger Wert danach zaehlt.
     timer.record(-50);
     ASSERT_EQ(timer.count(), 0);
+    ASSERT_EQ(timer.last(), 0);
     timer.record(80);
     ASSERT_EQ(timer.count(), 1);
     ASSERT_EQ(timer.average(), 80);
+    ASSERT_EQ(timer.last(), 80);
 }
 
 TEST(BoxArt, waehltKnotenNachAnschluessen) {

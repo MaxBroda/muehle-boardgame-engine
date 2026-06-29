@@ -108,6 +108,13 @@ std::string phaseName(Phase p) {
     return "";
 }
 
+// Klartextname einer Farbe fuer die Anzeige.
+std::string colorName(Color c) {
+    if (c == Color::White) return "Weiss";
+    if (c == Color::Black) return "Schwarz";
+    return "?";
+}
+
 // Liest einen nicht leeren Spielernamen ein. Bei leerer Eingabe gilt der
 // Standardname.
 std::string askName(const ConsoleRenderer& renderer, const std::string& fallback) {
@@ -176,14 +183,39 @@ std::string timestampedPath(const std::string& prefix, const std::string& ext) {
     return std::string(kSavesDir) + "/" + prefix + "_" + stamp + ext;
 }
 
-// Zeigt den Kopf eines Zuges: Brett, Spieler am Zug, Phase und Steinzahlen.
-void showSituation(const ConsoleRenderer& renderer, const Game& game) {
+// Zeigt die bisher verbrauchte Bedenkzeit beider Spieler neben dem Brett. Der
+// Spieler am Zug ist markiert. Die Werte aktualisieren sich nach jedem Zug; ihre
+// Summe entspricht am Ende genau der Gesamtauswertung.
+void showThinkingTimes(const ConsoleRenderer& renderer, const Game& game,
+                       const MoveTimer& whiteTimer, const MoveTimer& blackTimer) {
+    Color toMove = game.currentPlayer().color();
+    renderer.showMessage("Bedenkzeit:");
+    auto line = [&](Color c, const MoveTimer& timer) {
+        std::string prefix = (c == toMove) ? "> " : "  ";
+        std::string lastPart = (timer.count() == 0)
+            ? "noch kein Zug"
+            : "letzter Zug " + MoveTimer::formatSeconds(timer.last());
+        std::string suffix = (c == toMove) ? "   (am Zug)" : "";
+        renderer.showMessage(prefix + game.playerByColor(c).name() + " (" +
+                             colorName(c) + "): gesamt " +
+                             MoveTimer::formatSeconds(timer.total()) + ", " +
+                             lastPart + suffix);
+    };
+    line(Color::White, whiteTimer);
+    line(Color::Black, blackTimer);
+}
+
+// Zeigt den Kopf eines Zuges: Brett, Spieler am Zug, Phase, Steinzahlen und die
+// laufende Bedenkzeit beider Spieler.
+void showSituation(const ConsoleRenderer& renderer, const Game& game,
+                   const MoveTimer& whiteTimer, const MoveTimer& blackTimer) {
     renderer.drawBoard(game.board());
     const Player& p = game.currentPlayer();
     renderer.showMessage("");
     renderer.showMessage("Am Zug: " + p.name() + "  (" + phaseName(p.currentPhase()) + ")");
     renderer.showMessage("Steine in der Hand: " + std::to_string(p.stonesInHand()) +
                          ", auf dem Brett: " + std::to_string(p.stonesOnBoard()));
+    showThinkingTimes(renderer, game, whiteTimer, blackTimer);
 }
 
 // Behandelt das Entfernen eines gegnerischen Steins nach einer Muehle.
@@ -342,7 +374,7 @@ void runGameLoop(const ConsoleRenderer& renderer, const InputParser& parser,
             }
             continue;
         }
-        showSituation(renderer, game);
+        showSituation(renderer, game, whiteTimer, blackTimer);
         Color mover = game.currentPlayer().color();
         Phase phase = game.currentPlayer().currentPhase();
         auto start = std::chrono::steady_clock::now();
