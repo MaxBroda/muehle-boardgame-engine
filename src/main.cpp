@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 
+#include "AiPlayer.h"
 #include "CommandLine.h"
 #include "ConsoleRenderer.h"
 #include "EventLog.h"
@@ -32,6 +33,10 @@ namespace fs = std::filesystem;
 // verzeichnis; das Programm wird laut README aus dem Projektwurzel-Ordner
 // gestartet.
 const char* kSavesDir = "data";
+
+// Suchtiefe des KI-Gegners in Halbzuegen. Tief genug, um Drohungen zu blockieren
+// und Muehlen vorzubereiten, und auch ohne optimierten Build sofort spielbar.
+const int kAiDepth = 4;
 
 // Ausgang eines Zug-Dialogs.
 enum class Turn { Applied, Undone, Quit, EndOfInput };
@@ -80,6 +85,13 @@ std::string describeMove(const Move& m) {
         return fieldName(m.to);
     }
     return fieldName(m.from) + "-" + fieldName(m.to);
+}
+
+// Das passende Tatwort zu einer Zugart fuer lesbare Meldungen.
+std::string moveVerb(MoveType type) {
+    return (type == MoveType::Place)  ? "setzt"
+           : (type == MoveType::Slide) ? "zieht"
+                                       : "springt";
 }
 
 // Zeigt alle aktuell gueltigen Zuege als durchgehende Zeile.
@@ -323,10 +335,8 @@ void logMoveEvent(EventLog& eventLog, const Game& game, Color mover, Phase phase
     if (!eventLog.isActive()) {
         return;
     }
-    std::string verb = (done.type == MoveType::Place)  ? "setzt"
-                       : (done.type == MoveType::Slide) ? "zieht"
-                                                        : "springt";
-    std::string message = game.playerByColor(mover).name() + " " + verb + " " +
+    std::string message = game.playerByColor(mover).name() + " " +
+                          moveVerb(done.type) + " " +
                           describeMove(done) + " (" + phaseName(phase) + ", " +
                           std::to_string(millis) + " ms)";
     if (game.needsRemoval()) {
@@ -358,10 +368,46 @@ void showTiming(const ConsoleRenderer& renderer, const Game& game,
 // Spielt eine bereits angelegte Partie bis zum Ende oder bis zum Abbruch. Misst
 // dabei die Bedenkzeit je Zug und ordnet sie dem Spieler zu, der am Zug war.
 void runGameLoop(const ConsoleRenderer& renderer, const InputParser& parser,
-                 Game& game, EventLog& eventLog) {
+                 Game& game, EventLog& eventLog, const AiPlayer* ai) {
     MoveTimer whiteTimer;
     MoveTimer blackTimer;
     while (!game.isGameOver()) {
+        // Ist der Computer am Zug, waehlt er selbst. Ein Halbzug deckt sowohl
+        // einen regulaeren Zug als auch das Entfernen nach einer Muehle ab, weil
+        // legalMoves im Entfernen-Schritt die entfernbaren Steine liefert.
+        Color toMove = game.currentPlayer().color();
+        if (ai != nullptr && toMove == ai->color()) {
+            showSituation(renderer, game, whiteTimer, blackTimer);
+            const std::string& aiName = game.playerByColor(toMove).name();
+            bool removalStep = game.needsRemoval();
+            Phase aiPhase = game.currentPlayer().currentPhase();
+            auto start = std::chrono::steady_clock::now();
+            Move m;
+            if (!ai->chooseMove(game, m)) {
+                break;  // bei laufender Partie nicht zu erwarten
+            }
+            game.applyMove(m);
+            auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                               std::chrono::steady_clock::now() - start)
+                               .count();
+            if (removalStep) {
+                renderer.showMessage(aiName + " entfernt " +
+                                     fieldName(m.removed) + ".");
+                if (eventLog.isActive()) {
+                    eventLog.log(aiName + " entfernt " + fieldName(m.removed));
+                }
+            } else {
+                // Die Rechenzeit der KI wie einen menschlichen Zug erfassen.
+                (toMove == Color::White ? whiteTimer : blackTimer).record(elapsed);
+                renderer.showMessage(aiName + " " + moveVerb(m.type) + " " +
+                                     describeMove(m) + ".");
+                if (!game.history().empty()) {
+                    logMoveEvent(eventLog, game, toMove, aiPhase,
+                                 game.history().back(), elapsed);
+                }
+            }
+            continue;
+        }
         if (game.needsRemoval()) {
             // Der entfernende Spieler bleibt am Zug; Name vor dem Entfernen merken.
             std::string remover = game.currentPlayer().name();
@@ -424,14 +470,32 @@ void runGameLoop(const ConsoleRenderer& renderer, const InputParser& parser,
 // Menuepunkt 1: neue Partie.
 void playNewGame(const ConsoleRenderer& renderer, const InputParser& parser,
                  EventLog& eventLog) {
-    std::string whiteName = askName(renderer, "Spieler 1 (Weiss)");
-    std::string blackName = askName(renderer, "Spieler 2 (Schwarz)");
+    renderer.showMessage("Gegner waehlen: 1) zweiter Mensch  2) Computer");
+    std::string opp = renderer.promptInput();
+    bool vsComputer = (opp == "2");
+
+    // Der KI-Gegner wird immer angelegt (das kostet nichts), aber nur bei Wahl
+    // des Computers tatsaechlich verwendet. Er spielt Schwarz, der Mensch beginnt
+    // als Weiss.
+    AiPlayer computer(Color::Black, kAiDepth);
+    const AiPlayer* ai = vsComputer ? &computer : nullptr;
+
+    std::string whiteName;
+    std::string blackName;
+    if (vsComputer) {
+        whiteName = askName(renderer, "Spieler (Weiss)");
+        blackName = "Computer";
+    } else {
+        whiteName = askName(renderer, "Spieler 1 (Weiss)");
+        blackName = askName(renderer, "Spieler 2 (Schwarz)");
+    }
     if (eventLog.isActive()) {
         eventLog.log("Neue Partie: " + whiteName + " (Weiss) gegen " + blackName +
-                     " (Schwarz)");
+                     " (Schwarz)" +
+                     (vsComputer ? ", Computer spielt Schwarz" : ""));
     }
     Game game(whiteName, blackName);
-    runGameLoop(renderer, parser, game, eventLog);
+    runGameLoop(renderer, parser, game, eventLog, ai);
 }
 
 // Menuepunkt 2: gespeicherten Spielstand fortsetzen.
@@ -459,7 +523,9 @@ void continueGame(const ConsoleRenderer& renderer, const InputParser& parser,
         eventLog.log("Spielstand fortgesetzt: " + whiteName + " gegen " +
                      blackName);
     }
-    runGameLoop(renderer, parser, game, eventLog);
+    // Ein fortgesetzter Spielstand wird von zwei Menschen weitergespielt; das
+    // Dateiformat haelt keine KI-Information fest.
+    runGameLoop(renderer, parser, game, eventLog, nullptr);
 }
 
 // Haengt Leerzeichen an, bis der Text die gewuenschte Breite hat. Fuer eine
