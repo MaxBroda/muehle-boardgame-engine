@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 
+#include "AiPlayer.h"
 #include "Board.h"
 #include "CommandLine.h"
 #include "ConsoleRenderer.h"
@@ -136,6 +137,30 @@ TEST(Board, senkrechteMuehleZaehltUnabhaengigVonWaagerechter) {
     // a4 ist Teil keiner waagerechten Dreierlinie mit nur einem Feldnamen,
     // die Erkennung darf also nicht von der Reihe abhaengen.
     ASSERT_FALSE(board.formsMill(idx("a4"), Color::White));
+}
+
+TEST(Board, zaehltFastFertigeMuehle) {
+    Board board;
+    // Zwei Steine auf der Linie a7-d7-g7, drittes Feld frei: eine offene Drohung.
+    board.placeStone(idx("a7"), Color::White);
+    board.placeStone(idx("d7"), Color::White);
+    ASSERT_EQ(board.twoInLineCount(Color::White), 1);
+    // Wird die Linie vervollstaendigt, ist sie eine fertige Muehle und zaehlt
+    // nicht mehr als fast fertig.
+    board.placeStone(idx("g7"), Color::White);
+    ASSERT_EQ(board.twoInLineCount(Color::White), 0);
+}
+
+TEST(Board, fastFertigeMuehleBrauchtFreiesDrittesFeld) {
+    Board board;
+    // Zwei weisse Steine, aber das dritte Feld ist von Schwarz belegt: keine
+    // offene Drohung mehr.
+    board.placeStone(idx("a7"), Color::White);
+    board.placeStone(idx("d7"), Color::White);
+    board.placeStone(idx("g7"), Color::Black);
+    ASSERT_EQ(board.twoInLineCount(Color::White), 0);
+    // Aus schwarzer Sicht sind es ebenfalls keine zwei in einer Linie.
+    ASSERT_EQ(board.twoInLineCount(Color::Black), 0);
 }
 
 // Erste Tests auf der Phasen-Ableitung des Spielers.
@@ -917,6 +942,191 @@ TEST(MoveTimer, formatiertRandwerte) {
     // Null und ein negativer (unplausibler) Wert ergeben sauber 0.00 s.
     ASSERT_EQ(MoveTimer::formatSeconds(0), std::string("0.00 s"));
     ASSERT_EQ(MoveTimer::formatSeconds(-100), std::string("0.00 s"));
+}
+
+// --- Sprint H: AiPlayer -----------------------------------------------------
+
+// Kleiner Helfer: setzt einen Stein fuer den Spieler am Zug (Setzphase).
+static void place(Game& g, Field to) {
+    Move m;
+    m.type = MoveType::Place;
+    m.to = to;
+    ASSERT_TRUE(g.applyMove(m));
+}
+
+TEST(AiPlayer, bewertetGleicheStellungNeutral) {
+    // Auf dem leeren Anfangsbrett hat keine Seite einen Vorteil. Die Bewertung
+    // ist null und aus Sicht beider Farben symmetrisch.
+    Game game("Weiss", "Schwarz");
+    ASSERT_EQ(AiPlayer::evaluate(game, Color::White), 0);
+    ASSERT_EQ(AiPlayer::evaluate(game, Color::Black), 0);
+}
+
+TEST(AiPlayer, belohntMaterialvorsprungUndMuehle) {
+    // Weiss baut die Muehle a7-d7-g7 und nimmt dafuer einen schwarzen Stein.
+    // Danach hat Weiss einen Stein mehr und drei Steine in einer Muehle, die
+    // Bewertung faellt also klar zu Gunsten von Weiss aus und ist spiegelbildlich
+    // aus schwarzer Sicht negativ.
+    Game game("Weiss", "Schwarz");
+    place(game, 0);   // Weiss a7
+    place(game, 6);   // Schwarz c5
+    place(game, 1);   // Weiss d7
+    place(game, 8);   // Schwarz e5
+    place(game, 2);   // Weiss g7 schliesst die Muehle
+    ASSERT_TRUE(game.needsRemoval());
+    Move remove;
+    remove.removed = 6;  // den schwarzen Stein auf c5 entfernen
+    ASSERT_TRUE(game.applyMove(remove));
+
+    int scoreWhite = AiPlayer::evaluate(game, Color::White);
+    int scoreBlack = AiPlayer::evaluate(game, Color::Black);
+    // Klarer Vorteil fuer Weiss, mindestens ein ganzer Stein Material (100), und
+    // die Bewertung ist spiegelbildlich aus schwarzer Sicht.
+    ASSERT_TRUE(scoreWhite >= 100);
+    ASSERT_EQ(scoreBlack, -scoreWhite);
+}
+
+TEST(AiPlayer, bewertetMuehlenaufbauHoeher) {
+    // Zwei Stellungen mit gleichem Material und ohne fertige Muehle. In der einen
+    // bilden die weissen Steine eine angefangene Muehle (a7 und d7 auf einer
+    // Linie), in der anderen nicht. Die angefangene Muehle muss hoeher bewertet
+    // werden, damit die KI auf Muehlen hinarbeitet statt ziellos zu ziehen.
+    Game withThreat("Weiss", "Schwarz");
+    place(withThreat, 0);   // Weiss a7
+    place(withThreat, 9);   // Schwarz a4
+    place(withThreat, 1);   // Weiss d7  -> zwei in einer Linie
+    place(withThreat, 12);  // Schwarz e4
+
+    Game withoutThreat("Weiss", "Schwarz");
+    place(withoutThreat, 0);   // Weiss a7
+    place(withoutThreat, 9);   // Schwarz a4
+    place(withoutThreat, 3);   // Weiss b6 -> keine gemeinsame Linie
+    place(withoutThreat, 12);  // Schwarz e4
+
+    ASSERT_TRUE(AiPlayer::evaluate(withThreat, Color::White) >
+                AiPlayer::evaluate(withoutThreat, Color::White));
+}
+
+TEST(AiPlayer, schliesstErreichbareMuehle) {
+    // Weiss hat a7 und d7, der Computer ist am Zug. Der einzige Zug, der sofort
+    // eine Muehle schliesst und damit Material gewinnt, ist g7. Die Suche muss
+    // ihn finden.
+    Game game("Computer", "Mensch");
+    place(game, 0);   // Weiss a7
+    place(game, 6);   // Schwarz c5
+    place(game, 1);   // Weiss d7
+    place(game, 8);   // Schwarz e5
+    // Jetzt ist Weiss am Zug und kann mit g7 (Feld 2) die Muehle schliessen.
+    AiPlayer ai(Color::White, 3);
+    Move chosen;
+    ASSERT_TRUE(ai.chooseMove(game, chosen));
+    ASSERT_EQ(chosen.type, MoveType::Place);
+    ASSERT_EQ(chosen.to, 2);
+}
+
+TEST(AiPlayer, blockiertDrohendeMuehleDesGegners) {
+    // Schwarz droht mit a7 und d7 die Muehle auf g7 (Feld 2). Weiss hat keine
+    // eigene Muehle in einem Zug erreichbar. Die Vorausschau muss erkennen, dass
+    // Nichtblocken den Gegner im naechsten Halbzug die Muehle schliessen laesst,
+    // und deshalb selbst auf g7 setzen.
+    Game game("Computer", "Mensch");
+    place(game, 6);   // Weiss c5  (kein Muehledrohung)
+    place(game, 0);   // Schwarz a7
+    place(game, 12);  // Weiss e4  (kein Muehledrohung)
+    place(game, 1);   // Schwarz d7 -> droht g7
+    // Weiss am Zug. Mit Tiefe 2 sieht die KI den gegnerischen Muehlenschluss.
+    AiPlayer ai(Color::White, 2);
+    Move chosen;
+    ASSERT_TRUE(ai.chooseMove(game, chosen));
+    ASSERT_EQ(chosen.type, MoveType::Place);
+    ASSERT_EQ(chosen.to, 2);
+}
+
+TEST(AiPlayer, liefertKeinenZugAmSpielende) {
+    // Eine deterministische Partie zu Ende spielen (beide schliessen bevorzugt
+    // Muehlen). Am Spielende darf die KI keinen Zug mehr melden.
+    Game game("Computer", "Mensch");
+    int ply = 0;
+    const int kMaxPly = 3000;
+    while (!game.isGameOver() && ply < kMaxPly) {
+        if (game.needsRemoval()) {
+            Move r;
+            r.removed = game.removableStones().front();
+            ASSERT_TRUE(game.applyMove(r));
+            ++ply;
+            continue;
+        }
+        std::vector<Move> actions = legalActions(game);
+        ASSERT_FALSE(actions.empty());
+        Move chosen = actions.front();
+        for (const Move& cand : actions) {
+            Game probe = game;
+            probe.applyMove(cand);
+            if (probe.needsRemoval()) {
+                chosen = cand;
+                break;
+            }
+        }
+        ASSERT_TRUE(game.applyMove(chosen));
+        ++ply;
+    }
+    ASSERT_TRUE(game.isGameOver());
+    AiPlayer ai(game.currentPlayer().color(), 3);
+    Move chosen;
+    ASSERT_FALSE(ai.chooseMove(game, chosen));
+}
+
+TEST(AiPlayer, begrenztFehlerquoteAufGueltigenBereich) {
+    // Werte ausserhalb 0..100 werden auf den Rand gezogen.
+    AiPlayer tooHigh(Color::White, 2, 150);
+    AiPlayer tooLow(Color::White, 2, -10);
+    AiPlayer normal(Color::White, 2, 30);
+    ASSERT_EQ(tooHigh.blunderPercent(), 100);
+    ASSERT_EQ(tooLow.blunderPercent(), 0);
+    ASSERT_EQ(normal.blunderPercent(), 30);
+}
+
+TEST(AiPlayer, zufallszugBleibtImmerGueltig) {
+    // Bei voller Fehlerquote spielt die KI stets zufaellig. Egal welcher Zug
+    // gewaehlt wird, er muss regelkonform sein. Mehrfach pruefen, weil der Zug
+    // zufaellig ist.
+    AiPlayer ai(Color::White, 2, 100);
+    for (int i = 0; i < 40; ++i) {
+        Game game("Weiss", "Schwarz");
+        place(game, 0);   // Weiss a7
+        place(game, 9);   // Schwarz a4
+        place(game, 1);   // Weiss d7
+        place(game, 12);  // Schwarz e4
+        Move chosen;
+        ASSERT_TRUE(ai.chooseMove(game, chosen));
+        std::string reason;
+        ASSERT_TRUE(game.validateMove(chosen, reason));
+    }
+}
+
+TEST(AiPlayer, gewinntGegenPassivenGegner) {
+    // Sicherung gegen zielloses Hin und Her: Gegen einen Gegner, der stets seinen
+    // ersten moeglichen Zug spielt, muss die KI ihren Vorteil in einen Sieg
+    // verwandeln und darf nicht endlos pendeln. Bleibt die Partie offen, war die
+    // KI nicht zielstrebig genug.
+    Game game("Passiv", "KI");  // Weiss passiv, Schwarz = KI
+    AiPlayer ai(Color::Black, 4);
+    int ply = 0;
+    const int kMaxPly = 300;
+    while (!game.isGameOver() && ply < kMaxPly) {
+        Move m;
+        if (game.currentPlayer().color() == Color::Black) {
+            ASSERT_TRUE(ai.chooseMove(game, m));
+        } else {
+            std::vector<Move> moves = game.legalMoves();
+            ASSERT_FALSE(moves.empty());
+            m = moves.front();
+        }
+        ASSERT_TRUE(game.applyMove(m));
+        ++ply;
+    }
+    ASSERT_TRUE(game.isGameOver());
+    ASSERT_TRUE(game.winner() == Color::Black);
 }
 
 int main() {

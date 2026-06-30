@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 
+#include "AiPlayer.h"
 #include "CommandLine.h"
 #include "ConsoleRenderer.h"
 #include "EventLog.h"
@@ -32,6 +33,10 @@ namespace fs = std::filesystem;
 // verzeichnis; das Programm wird laut README aus dem Projektwurzel-Ordner
 // gestartet.
 const char* kSavesDir = "data";
+
+// Suchtiefe des KI-Gegners in Halbzuegen. Tief genug, um Drohungen zu blockieren
+// und Muehlen vorzubereiten, und auch ohne optimierten Build sofort spielbar.
+const int kAiDepth = 4;
 
 // Ausgang eines Zug-Dialogs.
 enum class Turn { Applied, Undone, Quit, EndOfInput };
@@ -80,6 +85,31 @@ std::string describeMove(const Move& m) {
         return fieldName(m.to);
     }
     return fieldName(m.from) + "-" + fieldName(m.to);
+}
+
+// Das passende Tatwort zu einer Zugart fuer lesbare Meldungen.
+std::string moveVerb(MoveType type) {
+    return (type == MoveType::Place)  ? "setzt"
+           : (type == MoveType::Slide) ? "zieht"
+                                       : "springt";
+}
+
+// Beschreibt einen kompletten Computerzug in einem natuerlichen Satz. Quell- und
+// Zielfeld werden ausgeschrieben, damit klar ist, von wo nach wo gezogen wurde,
+// und ein eventuelles Entfernen gehoert sichtbar zum selben Zug.
+std::string describeAiTurn(const Move& move, Field removed) {
+    std::string s = "Computer ";
+    if (move.type == MoveType::Place) {
+        s += "setzt einen Stein auf " + fieldName(move.to);
+    } else {
+        s += (move.type == MoveType::Slide ? "zieht von " : "springt von ") +
+             fieldName(move.from) + " nach " + fieldName(move.to);
+    }
+    if (removed != -1) {
+        s += " und entfernt den gegnerischen Stein auf " + fieldName(removed);
+    }
+    s += ".";
+    return s;
 }
 
 // Zeigt alle aktuell gueltigen Zuege als durchgehende Zeile.
@@ -183,39 +213,68 @@ std::string timestampedPath(const std::string& prefix, const std::string& ext) {
     return std::string(kSavesDir) + "/" + prefix + "_" + stamp + ext;
 }
 
-// Zeigt die bisher verbrauchte Bedenkzeit beider Spieler neben dem Brett. Der
-// Spieler am Zug ist markiert. Die Werte aktualisieren sich nach jedem Zug; ihre
-// Summe entspricht am Ende genau der Gesamtauswertung.
-void showThinkingTimes(const ConsoleRenderer& renderer, const Game& game,
-                       const MoveTimer& whiteTimer, const MoveTimer& blackTimer) {
+// Baut die Infospalte rechts neben dem Brett: Spieler am Zug, die Bedenkzeit des
+// letzten Zugs beider Spieler und die Steinzahlen. Gesamtzeit und Durchschnitt
+// bleiben bewusst der Auswertung am Spielende vorbehalten, damit die Ansicht
+// waehrend des Spiels uebersichtlich bleibt.
+std::vector<std::string> buildSidebar(const Game& game, const MoveTimer& whiteTimer,
+                                      const MoveTimer& blackTimer) {
+    const Player& white = game.playerByColor(Color::White);
+    const Player& black = game.playerByColor(Color::Black);
     Color toMove = game.currentPlayer().color();
-    renderer.showMessage("Bedenkzeit:");
-    auto line = [&](Color c, const MoveTimer& timer) {
-        std::string prefix = (c == toMove) ? "> " : "  ";
-        std::string lastPart = (timer.count() == 0)
-            ? "noch kein Zug"
-            : "letzter Zug " + MoveTimer::formatSeconds(timer.last());
-        std::string suffix = (c == toMove) ? "   (am Zug)" : "";
-        renderer.showMessage(prefix + game.playerByColor(c).name() + " (" +
-                             colorName(c) + "): gesamt " +
-                             MoveTimer::formatSeconds(timer.total()) + ", " +
-                             lastPart + suffix);
+
+    // Namen auf gemeinsame Breite bringen, damit die Werte buendig stehen.
+    std::size_t nameWidth = std::max(white.name().size(), black.name().size());
+    auto pad = [&](const std::string& s) {
+        return s.size() < nameWidth ? s + std::string(nameWidth - s.size(), ' ')
+                                     : s;
     };
-    line(Color::White, whiteTimer);
-    line(Color::Black, blackTimer);
+    auto lastTime = [](const MoveTimer& t) {
+        return t.count() == 0 ? std::string("noch kein Zug")
+                              : MoveTimer::formatSeconds(t.last());
+    };
+    auto stones = [](const Player& p) {
+        return std::to_string(p.stonesInHand()) + " / " +
+               std::to_string(p.stonesOnBoard());
+    };
+
+    std::vector<std::string> s;
+    s.push_back("Am Zug: " + game.playerByColor(toMove).name() + " (" +
+                colorName(toMove) + ")");
+    s.push_back("");
+    s.push_back("Bedenkzeit (letzter Zug)");
+    s.push_back("  " + pad(white.name()) + "  " + lastTime(whiteTimer));
+    s.push_back("  " + pad(black.name()) + "  " + lastTime(blackTimer));
+    s.push_back("");
+    s.push_back("Steine (Hand / Brett)");
+    s.push_back("  " + pad(white.name()) + "  " + stones(white));
+    s.push_back("  " + pad(black.name()) + "  " + stones(black));
+    return s;
 }
 
-// Zeigt den Kopf eines Zuges: Brett, Spieler am Zug, Phase, Steinzahlen und die
-// laufende Bedenkzeit beider Spieler.
+// Zeigt den Kopf eines Zuges: Brett mit der Infospalte rechts daneben und die
+// aktuelle Phase hervorgehoben darunter.
 void showSituation(const ConsoleRenderer& renderer, const Game& game,
                    const MoveTimer& whiteTimer, const MoveTimer& blackTimer) {
-    renderer.drawBoard(game.board());
-    const Player& p = game.currentPlayer();
-    renderer.showMessage("");
-    renderer.showMessage("Am Zug: " + p.name() + "  (" + phaseName(p.currentPhase()) + ")");
-    renderer.showMessage("Steine in der Hand: " + std::to_string(p.stonesInHand()) +
-                         ", auf dem Brett: " + std::to_string(p.stonesOnBoard()));
-    showThinkingTimes(renderer, game, whiteTimer, blackTimer);
+    renderer.drawBoard(game.board(), buildSidebar(game, whiteTimer, blackTimer));
+    renderer.showHighlighted("Phase: " +
+                             phaseName(game.currentPlayer().currentPhase()));
+}
+
+// Liefert einen Hinweis, wenn ein Spieler in eine neue Phase vorrueckt, sonst
+// einen leeren String. Der Text erklaert die neue Phase kurz, damit der Wechsel
+// auch fuer Neulinge verstaendlich ist (besonders die Springphase). Rueckwege
+// (etwa durch Undo) loesen bewusst keinen Hinweis aus.
+std::string phaseChangeMessage(const std::string& name, Phase from, Phase to) {
+    if (from == Phase::Placing && to == Phase::Moving) {
+        return name + " hat alle Steine gesetzt und ist jetzt in der Ziehphase. "
+                      "Steine wandern auf ein benachbartes freies Feld.";
+    }
+    if (to == Phase::Flying && from != Phase::Flying) {
+        return name + " hat nur noch drei Steine und ist in der Springphase. "
+                      "Steine duerfen auf ein beliebiges freies Feld springen.";
+    }
+    return "";
 }
 
 // Behandelt das Entfernen eines gegnerischen Steins nach einer Muehle.
@@ -323,10 +382,8 @@ void logMoveEvent(EventLog& eventLog, const Game& game, Color mover, Phase phase
     if (!eventLog.isActive()) {
         return;
     }
-    std::string verb = (done.type == MoveType::Place)  ? "setzt"
-                       : (done.type == MoveType::Slide) ? "zieht"
-                                                        : "springt";
-    std::string message = game.playerByColor(mover).name() + " " + verb + " " +
+    std::string message = game.playerByColor(mover).name() + " " +
+                          moveVerb(done.type) + " " +
                           describeMove(done) + " (" + phaseName(phase) + ", " +
                           std::to_string(millis) + " ms)";
     if (game.needsRemoval()) {
@@ -358,10 +415,96 @@ void showTiming(const ConsoleRenderer& renderer, const Game& game,
 // Spielt eine bereits angelegte Partie bis zum Ende oder bis zum Abbruch. Misst
 // dabei die Bedenkzeit je Zug und ordnet sie dem Spieler zu, der am Zug war.
 void runGameLoop(const ConsoleRenderer& renderer, const InputParser& parser,
-                 Game& game, EventLog& eventLog) {
+                 Game& game, EventLog& eventLog, AiPlayer* ai) {
     MoveTimer whiteTimer;
     MoveTimer blackTimer;
+    // Zuletzt gesehene Phase je Spieler, um einen Wechsel genau einmal zu melden.
+    // Auf den Startzustand gesetzt, damit ein geladener Spielstand keinen
+    // Wechsel vortaeuscht.
+    Phase prevWhitePhase = game.playerByColor(Color::White).currentPhase();
+    Phase prevBlackPhase = game.playerByColor(Color::Black).currentPhase();
     while (!game.isGameOver()) {
+        // Phasenwechsel beider Spieler melden, sobald er auftritt.
+        auto announcePhase = [&](Color c, Phase& prev) {
+            Phase now = game.playerByColor(c).currentPhase();
+            std::string msg =
+                phaseChangeMessage(game.playerByColor(c).name(), prev, now);
+            if (!msg.empty()) {
+                renderer.showHighlighted(msg);
+            }
+            prev = now;
+        };
+        announcePhase(Color::White, prevWhitePhase);
+        announcePhase(Color::Black, prevBlackPhase);
+
+        // Ist der Computer am Zug, spielt er seinen vollstaendigen Zug selbst.
+        // Schliesst der Zug eine Muehle, gehoert das Entfernen zum selben Zug und
+        // wird gemeinsam beschrieben, damit der Mensch ihn als eine Einheit
+        // nachvollziehen kann.
+        Color toMove = game.currentPlayer().color();
+        if (ai != nullptr && toMove == ai->color()) {
+            Phase aiPhase = game.currentPlayer().currentPhase();
+            // Steht ausnahmsweise schon ein Entfernen aus, waehrend die KI am Zug
+            // ist, wird dieser Halbzug als Entnahme behandelt, nicht als
+            // regulaerer Zug. So zeigt die Ausgabe den richtigen Stein statt "?".
+            bool removalPending = game.needsRemoval();
+
+            auto start = std::chrono::steady_clock::now();
+            Move move;
+            if (!ai->chooseMove(game, move)) {
+                // Kein Zug trotz laufender Partie ist nicht zu erwarten. Sauber
+                // zum Hauptmenue zurueck, statt mit einem unbestimmten Gewinner in
+                // die Endauswertung zu laufen.
+                return;
+            }
+            game.applyMove(move);
+            auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                               std::chrono::steady_clock::now() - start)
+                               .count();
+
+            if (removalPending) {
+                Field rem = game.history().empty() ? move.removed
+                                                   : game.history().back().removed;
+                renderer.showMessage("");
+                renderer.showMessage(
+                    "Computer entfernt den gegnerischen Stein auf " +
+                    fieldName(rem) + ".");
+                if (eventLog.isActive()) {
+                    eventLog.log(game.playerByColor(toMove).name() + " entfernt " +
+                                 fieldName(rem));
+                }
+                continue;
+            }
+
+            // Die Rechenzeit wie einen menschlichen Zug erfassen.
+            (toMove == Color::White ? whiteTimer : blackTimer).record(elapsed);
+            if (eventLog.isActive() && !game.history().empty()) {
+                logMoveEvent(eventLog, game, toMove, aiPhase,
+                             game.history().back(), elapsed);
+            }
+
+            // Schliesst der Zug eine Muehle, im selben Schritt den entfernten
+            // Stein bestimmen und entfernen.
+            Field removed = -1;
+            if (game.needsRemoval()) {
+                Move removal;
+                if (ai->chooseMove(game, removal)) {
+                    game.applyMove(removal);
+                    removed = game.history().back().removed;
+                    if (eventLog.isActive()) {
+                        eventLog.log(game.playerByColor(toMove).name() +
+                                     " entfernt " + fieldName(removed));
+                    }
+                }
+            }
+
+            // Nur den Zug in Worten ausgeben. Die Endstellung zeichnet die
+            // naechste Situationsanzeige (oder der Endstand); so wird jede
+            // Stellung genau einmal gezeichnet und nichts flackert.
+            renderer.showMessage("");
+            renderer.showMessage(describeAiTurn(move, removed));
+            continue;
+        }
         if (game.needsRemoval()) {
             // Der entfernende Spieler bleibt am Zug; Name vor dem Entfernen merken.
             std::string remover = game.currentPlayer().name();
@@ -424,14 +567,57 @@ void runGameLoop(const ConsoleRenderer& renderer, const InputParser& parser,
 // Menuepunkt 1: neue Partie.
 void playNewGame(const ConsoleRenderer& renderer, const InputParser& parser,
                  EventLog& eventLog) {
-    std::string whiteName = askName(renderer, "Spieler 1 (Weiss)");
-    std::string blackName = askName(renderer, "Spieler 2 (Schwarz)");
+    renderer.showMessage("Gegner waehlen: 1) zweiter Mensch  2) Computer");
+    std::string opp = renderer.promptInput();
+    bool vsComputer = (opp == "2");
+
+    // Schwierigkeitsgrad nur abfragen, wenn gegen den Computer gespielt wird.
+    // Tiefe und Fehlerquote ergeben zusammen die Spielstaerke.
+    int depth = kAiDepth;
+    int blunder = 0;
+    std::string level;
+    if (vsComputer) {
+        renderer.showMessage("Schwierigkeit: 1) Leicht  2) Mittel  3) Schwer");
+        std::string choice = renderer.promptInput();
+        if (choice == "1") {
+            depth = 1;
+            blunder = 50;
+            level = "Leicht";
+        } else if (choice == "3") {
+            depth = kAiDepth;
+            blunder = 0;
+            level = "Schwer";
+        } else {
+            depth = 3;
+            blunder = 15;
+            level = "Mittel";  // Standard bei leerer oder ungueltiger Eingabe
+        }
+    }
+
+    // Der KI-Gegner wird immer angelegt (das kostet nichts), aber nur bei Wahl
+    // des Computers tatsaechlich verwendet. Er spielt Schwarz, der Mensch beginnt
+    // als Weiss.
+    AiPlayer computer(Color::Black, depth, blunder);
+    AiPlayer* ai = vsComputer ? &computer : nullptr;
+
+    std::string whiteName;
+    std::string blackName;
+    if (vsComputer) {
+        whiteName = askName(renderer, "Spieler (Weiss)");
+        blackName = "Computer";
+        renderer.showMessage("Computer-Schwierigkeit: " + level + ".");
+    } else {
+        whiteName = askName(renderer, "Spieler 1 (Weiss)");
+        blackName = askName(renderer, "Spieler 2 (Schwarz)");
+    }
     if (eventLog.isActive()) {
         eventLog.log("Neue Partie: " + whiteName + " (Weiss) gegen " + blackName +
-                     " (Schwarz)");
+                     " (Schwarz)" +
+                     (vsComputer ? ", Computer spielt Schwarz (" + level + ")"
+                                 : ""));
     }
     Game game(whiteName, blackName);
-    runGameLoop(renderer, parser, game, eventLog);
+    runGameLoop(renderer, parser, game, eventLog, ai);
 }
 
 // Menuepunkt 2: gespeicherten Spielstand fortsetzen.
@@ -459,7 +645,9 @@ void continueGame(const ConsoleRenderer& renderer, const InputParser& parser,
         eventLog.log("Spielstand fortgesetzt: " + whiteName + " gegen " +
                      blackName);
     }
-    runGameLoop(renderer, parser, game, eventLog);
+    // Ein fortgesetzter Spielstand wird von zwei Menschen weitergespielt; das
+    // Dateiformat haelt keine KI-Information fest.
+    runGameLoop(renderer, parser, game, eventLog, nullptr);
 }
 
 // Haengt Leerzeichen an, bis der Text die gewuenschte Breite hat. Fuer eine
