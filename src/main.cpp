@@ -444,15 +444,38 @@ void runGameLoop(const ConsoleRenderer& renderer, const InputParser& parser,
         Color toMove = game.currentPlayer().color();
         if (ai != nullptr && toMove == ai->color()) {
             Phase aiPhase = game.currentPlayer().currentPhase();
+            // Steht ausnahmsweise schon ein Entfernen aus, waehrend die KI am Zug
+            // ist, wird dieser Halbzug als Entnahme behandelt, nicht als
+            // regulaerer Zug. So zeigt die Ausgabe den richtigen Stein statt "?".
+            bool removalPending = game.needsRemoval();
+
             auto start = std::chrono::steady_clock::now();
             Move move;
             if (!ai->chooseMove(game, move)) {
-                break;  // bei laufender Partie nicht zu erwarten
+                // Kein Zug trotz laufender Partie ist nicht zu erwarten. Sauber
+                // zum Hauptmenue zurueck, statt mit einem unbestimmten Gewinner in
+                // die Endauswertung zu laufen.
+                return;
             }
             game.applyMove(move);
             auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
                                std::chrono::steady_clock::now() - start)
                                .count();
+
+            if (removalPending) {
+                Field rem = game.history().empty() ? move.removed
+                                                   : game.history().back().removed;
+                renderer.showMessage("");
+                renderer.showMessage(
+                    "Computer entfernt den gegnerischen Stein auf " +
+                    fieldName(rem) + ".");
+                if (eventLog.isActive()) {
+                    eventLog.log(game.playerByColor(toMove).name() + " entfernt " +
+                                 fieldName(rem));
+                }
+                continue;
+            }
+
             // Die Rechenzeit wie einen menschlichen Zug erfassen.
             (toMove == Color::White ? whiteTimer : blackTimer).record(elapsed);
             if (eventLog.isActive() && !game.history().empty()) {

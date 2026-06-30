@@ -30,10 +30,12 @@ public:
 
     // Bewertet eine Stellung aus Sicht von "perspective". Ein positiver Wert ist
     // gut fuer perspective, ein negativer gut fuer den Gegner. Die Bewertung
-    // beruht auf dem Materialvorsprung (Steine auf dem Brett und in der Hand) und
-    // der Zahl der Steine, die in einer vollstaendigen Muehle stehen. Ein
-    // entschiedenes Spiel liefert einen sehr grossen Betrag, damit Sieg und
-    // Niederlage jede Feinbewertung ueberlagern.
+    // setzt sich aus vier Faktoren zusammen, jeweils als Differenz beider Seiten:
+    // Materialvorsprung (Steine auf dem Brett und in der Hand), Steine in einer
+    // vollstaendigen Muehle, fast fertige Muehlen (zwei eigene Steine plus freies
+    // drittes Feld) und Beweglichkeit (moegliche Ziehschritte auf freie
+    // Nachbarfelder). Ein entschiedenes Spiel liefert einen sehr grossen Betrag,
+    // damit Sieg und Niederlage jede Feinbewertung ueberlagern.
     static int evaluate(const Game& game, Color perspective);
 
     // Waehlt den aus KI-Sicht besten Halbzug in der aktuellen Stellung und legt
