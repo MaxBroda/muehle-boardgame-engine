@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 
+#include "AiPlayer.h"
 #include "Board.h"
 #include "CommandLine.h"
 #include "ConsoleRenderer.h"
@@ -917,6 +918,48 @@ TEST(MoveTimer, formatiertRandwerte) {
     // Null und ein negativer (unplausibler) Wert ergeben sauber 0.00 s.
     ASSERT_EQ(MoveTimer::formatSeconds(0), std::string("0.00 s"));
     ASSERT_EQ(MoveTimer::formatSeconds(-100), std::string("0.00 s"));
+}
+
+// --- Sprint H: AiPlayer -----------------------------------------------------
+
+// Kleiner Helfer: setzt einen Stein fuer den Spieler am Zug (Setzphase).
+static void place(Game& g, Field to) {
+    Move m;
+    m.type = MoveType::Place;
+    m.to = to;
+    ASSERT_TRUE(g.applyMove(m));
+}
+
+TEST(AiPlayer, bewertetGleicheStellungNeutral) {
+    // Auf dem leeren Anfangsbrett hat keine Seite einen Vorteil. Die Bewertung
+    // ist null und aus Sicht beider Farben symmetrisch.
+    Game game("Weiss", "Schwarz");
+    ASSERT_EQ(AiPlayer::evaluate(game, Color::White), 0);
+    ASSERT_EQ(AiPlayer::evaluate(game, Color::Black), 0);
+}
+
+TEST(AiPlayer, belohntMaterialvorsprungUndMuehle) {
+    // Weiss baut die Muehle a7-d7-g7 und nimmt dafuer einen schwarzen Stein.
+    // Danach hat Weiss einen Stein mehr und drei Steine in einer Muehle, die
+    // Bewertung faellt also klar zu Gunsten von Weiss aus und ist spiegelbildlich
+    // aus schwarzer Sicht negativ.
+    Game game("Weiss", "Schwarz");
+    place(game, 0);   // Weiss a7
+    place(game, 6);   // Schwarz c5
+    place(game, 1);   // Weiss d7
+    place(game, 8);   // Schwarz e5
+    place(game, 2);   // Weiss g7 schliesst die Muehle
+    ASSERT_TRUE(game.needsRemoval());
+    Move remove;
+    remove.removed = 6;  // den schwarzen Stein auf c5 entfernen
+    ASSERT_TRUE(game.applyMove(remove));
+
+    int scoreWhite = AiPlayer::evaluate(game, Color::White);
+    int scoreBlack = AiPlayer::evaluate(game, Color::Black);
+    ASSERT_TRUE(scoreWhite > 0);
+    ASSERT_EQ(scoreBlack, -scoreWhite);
+    // Ein Stein Vorsprung (100) plus drei Steine in einer Muehle (3 * 8 = 24).
+    ASSERT_EQ(scoreWhite, 124);
 }
 
 int main() {
