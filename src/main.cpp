@@ -213,39 +213,68 @@ std::string timestampedPath(const std::string& prefix, const std::string& ext) {
     return std::string(kSavesDir) + "/" + prefix + "_" + stamp + ext;
 }
 
-// Zeigt die bisher verbrauchte Bedenkzeit beider Spieler neben dem Brett. Der
-// Spieler am Zug ist markiert. Die Werte aktualisieren sich nach jedem Zug; ihre
-// Summe entspricht am Ende genau der Gesamtauswertung.
-void showThinkingTimes(const ConsoleRenderer& renderer, const Game& game,
-                       const MoveTimer& whiteTimer, const MoveTimer& blackTimer) {
+// Baut die Infospalte rechts neben dem Brett: Spieler am Zug, die Bedenkzeit des
+// letzten Zugs beider Spieler und die Steinzahlen. Gesamtzeit und Durchschnitt
+// bleiben bewusst der Auswertung am Spielende vorbehalten, damit die Ansicht
+// waehrend des Spiels uebersichtlich bleibt.
+std::vector<std::string> buildSidebar(const Game& game, const MoveTimer& whiteTimer,
+                                      const MoveTimer& blackTimer) {
+    const Player& white = game.playerByColor(Color::White);
+    const Player& black = game.playerByColor(Color::Black);
     Color toMove = game.currentPlayer().color();
-    renderer.showMessage("Bedenkzeit:");
-    auto line = [&](Color c, const MoveTimer& timer) {
-        std::string prefix = (c == toMove) ? "> " : "  ";
-        std::string lastPart = (timer.count() == 0)
-            ? "noch kein Zug"
-            : "letzter Zug " + MoveTimer::formatSeconds(timer.last());
-        std::string suffix = (c == toMove) ? "   (am Zug)" : "";
-        renderer.showMessage(prefix + game.playerByColor(c).name() + " (" +
-                             colorName(c) + "): gesamt " +
-                             MoveTimer::formatSeconds(timer.total()) + ", " +
-                             lastPart + suffix);
+
+    // Namen auf gemeinsame Breite bringen, damit die Werte buendig stehen.
+    std::size_t nameWidth = std::max(white.name().size(), black.name().size());
+    auto pad = [&](const std::string& s) {
+        return s.size() < nameWidth ? s + std::string(nameWidth - s.size(), ' ')
+                                     : s;
     };
-    line(Color::White, whiteTimer);
-    line(Color::Black, blackTimer);
+    auto lastTime = [](const MoveTimer& t) {
+        return t.count() == 0 ? std::string("noch kein Zug")
+                              : MoveTimer::formatSeconds(t.last());
+    };
+    auto stones = [](const Player& p) {
+        return std::to_string(p.stonesInHand()) + " / " +
+               std::to_string(p.stonesOnBoard());
+    };
+
+    std::vector<std::string> s;
+    s.push_back("Am Zug: " + game.playerByColor(toMove).name() + " (" +
+                colorName(toMove) + ")");
+    s.push_back("");
+    s.push_back("Bedenkzeit (letzter Zug)");
+    s.push_back("  " + pad(white.name()) + "  " + lastTime(whiteTimer));
+    s.push_back("  " + pad(black.name()) + "  " + lastTime(blackTimer));
+    s.push_back("");
+    s.push_back("Steine (Hand / Brett)");
+    s.push_back("  " + pad(white.name()) + "  " + stones(white));
+    s.push_back("  " + pad(black.name()) + "  " + stones(black));
+    return s;
 }
 
-// Zeigt den Kopf eines Zuges: Brett, Spieler am Zug, Phase, Steinzahlen und die
-// laufende Bedenkzeit beider Spieler.
+// Zeigt den Kopf eines Zuges: Brett mit der Infospalte rechts daneben und die
+// aktuelle Phase hervorgehoben darunter.
 void showSituation(const ConsoleRenderer& renderer, const Game& game,
                    const MoveTimer& whiteTimer, const MoveTimer& blackTimer) {
-    renderer.drawBoard(game.board());
-    const Player& p = game.currentPlayer();
-    renderer.showMessage("");
-    renderer.showMessage("Am Zug: " + p.name() + "  (" + phaseName(p.currentPhase()) + ")");
-    renderer.showMessage("Steine in der Hand: " + std::to_string(p.stonesInHand()) +
-                         ", auf dem Brett: " + std::to_string(p.stonesOnBoard()));
-    showThinkingTimes(renderer, game, whiteTimer, blackTimer);
+    renderer.drawBoard(game.board(), buildSidebar(game, whiteTimer, blackTimer));
+    renderer.showHighlighted("Phase: " +
+                             phaseName(game.currentPlayer().currentPhase()));
+}
+
+// Liefert einen Hinweis, wenn ein Spieler in eine neue Phase vorrueckt, sonst
+// einen leeren String. Der Text erklaert die neue Phase kurz, damit der Wechsel
+// auch fuer Neulinge verstaendlich ist (besonders die Springphase). Rueckwege
+// (etwa durch Undo) loesen bewusst keinen Hinweis aus.
+std::string phaseChangeMessage(const std::string& name, Phase from, Phase to) {
+    if (from == Phase::Placing && to == Phase::Moving) {
+        return name + " hat alle Steine gesetzt und ist jetzt in der Ziehphase. "
+                      "Steine wandern auf ein benachbartes freies Feld.";
+    }
+    if (to == Phase::Flying && from != Phase::Flying) {
+        return name + " hat nur noch drei Steine und ist in der Springphase. "
+                      "Steine duerfen auf ein beliebiges freies Feld springen.";
+    }
+    return "";
 }
 
 // Behandelt das Entfernen eines gegnerischen Steins nach einer Muehle.
@@ -389,7 +418,25 @@ void runGameLoop(const ConsoleRenderer& renderer, const InputParser& parser,
                  Game& game, EventLog& eventLog, const AiPlayer* ai) {
     MoveTimer whiteTimer;
     MoveTimer blackTimer;
+    // Zuletzt gesehene Phase je Spieler, um einen Wechsel genau einmal zu melden.
+    // Auf den Startzustand gesetzt, damit ein geladener Spielstand keinen
+    // Wechsel vortaeuscht.
+    Phase prevWhitePhase = game.playerByColor(Color::White).currentPhase();
+    Phase prevBlackPhase = game.playerByColor(Color::Black).currentPhase();
     while (!game.isGameOver()) {
+        // Phasenwechsel beider Spieler melden, sobald er auftritt.
+        auto announcePhase = [&](Color c, Phase& prev) {
+            Phase now = game.playerByColor(c).currentPhase();
+            std::string msg =
+                phaseChangeMessage(game.playerByColor(c).name(), prev, now);
+            if (!msg.empty()) {
+                renderer.showHighlighted(msg);
+            }
+            prev = now;
+        };
+        announcePhase(Color::White, prevWhitePhase);
+        announcePhase(Color::Black, prevBlackPhase);
+
         // Ist der Computer am Zug, spielt er seinen vollstaendigen Zug selbst.
         // Schliesst der Zug eine Muehle, gehoert das Entfernen zum selben Zug und
         // wird gemeinsam beschrieben, damit der Mensch ihn als eine Einheit
