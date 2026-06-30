@@ -167,4 +167,26 @@ int Board::stoneCount(Color c) const {
     return count;
 }
 
+int Board::twoInLineCount(Color c) const {
+    int count = 0;
+    for (const auto& line : kMills) {
+        int own = 0;
+        int empty = 0;
+        for (Field f : line) {
+            Color at = colorAt(f);
+            if (at == c) {
+                ++own;
+            } else if (at == Color::None) {
+                ++empty;
+            }
+        }
+        // Genau zwei eigene Steine und ein freies Feld bedeuten eine offene
+        // Drohung: ein weiterer Zug wuerde die Muehle schliessen.
+        if (own == 2 && empty == 1) {
+            ++count;
+        }
+    }
+    return count;
+}
+
 } // namespace muehle

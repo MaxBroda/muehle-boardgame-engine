@@ -51,6 +51,11 @@ public:
     // Anzahl der Steine einer Farbe auf dem Brett.
     int stoneCount(Color c) const;
 
+    // Anzahl der Muehlen-Linien, auf denen genau zwei Steine der Farbe c liegen
+    // und das dritte Feld frei ist (also fast fertige Muehlen). Dient der
+    // KI-Bewertung als Mass fuer Drohpotenzial.
+    int twoInLineCount(Color c) const;
+
 private:
     // Belegung der 24 Felder. Index = Feldnummer.
     std::array<Color, kFieldCount> fields_;

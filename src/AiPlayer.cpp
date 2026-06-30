@@ -23,6 +23,16 @@ constexpr int kMaterialWeight = 100;
 // Stellungsbonus, der unter dem Wert eines ganzen Steins bleibt.
 constexpr int kMillWeight = 8;
 
+// Gewicht je fast fertiger Muehle (zwei eigene Steine, drittes Feld frei). Gibt
+// der Bewertung ein Gefaelle, sodass die KI auf Muehlen hinarbeitet, statt bei
+// gleichem Material ziellos hin und her zu ziehen.
+constexpr int kTwoWeight = 4;
+
+// Gewicht je moeglichem Ziehschritt (eigener Stein neben einem freien Feld).
+// Belohnt Beweglichkeit und das Einengen des Gegners; klein gehalten, damit es
+// Material und Muehlen nicht ueberlagert.
+constexpr int kMobilityWeight = 1;
+
 } // namespace
 
 AiPlayer::AiPlayer(Color color, int searchDepth)
@@ -72,11 +82,31 @@ int AiPlayer::evaluate(const Game& game, Color perspective) {
         }
     }
 
+    // Beweglichkeit: wie viele Ziehschritte auf ein benachbartes freies Feld eine
+    // Farbe hat. Nutzt die oeffentliche Nachbarschaft des Bretts, dupliziert also
+    // keine Topologie.
+    auto mobility = [&](Color c) {
+        int m = 0;
+        for (int f = 0; f < kFieldCount; ++f) {
+            if (b.colorAt(f) != c) {
+                continue;
+            }
+            for (Field n : b.neighbors(f)) {
+                if (b.isEmpty(n)) {
+                    ++m;
+                }
+            }
+        }
+        return m;
+    };
+
     return kMaterialWeight * (myMaterial - oppMaterial) +
-           kMillWeight * (myMills - oppMills);
+           kMillWeight * (myMills - oppMills) +
+           kTwoWeight * (b.twoInLineCount(perspective) - b.twoInLineCount(opp)) +
+           kMobilityWeight * (mobility(perspective) - mobility(opp));
 }
 
-bool AiPlayer::chooseMove(const Game& game, Move& out) const {
+bool AiPlayer::chooseMove(const Game& game, Move& out) {
     std::vector<Move> moves = game.legalMoves();
     if (moves.empty()) {
         // Beendete Partie: es gibt keinen Zug zu waehlen.
@@ -84,24 +114,47 @@ bool AiPlayer::chooseMove(const Game& game, Move& out) const {
     }
 
     // Die Wurzel ist ein Max-Knoten: die KI ist am Zug und sucht den hoechsten
-    // Wert. Jeder Kandidat wird auf einer Kopie des Spiels durchgespielt.
+    // Wert. Jeder Kandidat wird auf einer Kopie des Spiels durchgespielt. Hier
+    // wird mit vollem Fenster gesucht, damit gleichwertige Zuege verlaesslich
+    // erkannt werden; das Alpha-Beta-Schneiden wirkt in den tieferen Ebenen.
     int bestScore = kNegInfinity;
-    Move bestMove = moves.front();
-    int alpha = kNegInfinity;
-    const int beta = kPosInfinity;
+    std::vector<Move> bestMoves;
     for (const Move& m : moves) {
         Game child = game;
         child.applyMove(m);
-        int score = search(child, searchDepth_ - 1, alpha, beta);
+        int score = search(child, searchDepth_ - 1, kNegInfinity, kPosInfinity);
         if (score > bestScore) {
             bestScore = score;
-            bestMove = m;
-        }
-        if (bestScore > alpha) {
-            alpha = bestScore;
+            bestMoves.clear();
+            bestMoves.push_back(m);
+        } else if (score == bestScore) {
+            bestMoves.push_back(m);
         }
     }
-    out = bestMove;
+
+    // Anti-Pendel: unter gleichwertigen Zuegen den zuletzt gespielten Zug nicht
+    // einfach umkehren (etwa d7->a7 direkt nach a7->d7), solange es eine
+    // gleichwertige Alternative gibt. Das verhindert sinnloses Hin und Her.
+    auto reversesLast = [&](const Move& m) {
+        return lastChosen_.from != -1 && lastChosen_.to != -1 &&
+               m.from == lastChosen_.to && m.to == lastChosen_.from;
+    };
+    Move chosen = bestMoves.front();
+    if (bestMoves.size() > 1 && reversesLast(chosen)) {
+        for (const Move& m : bestMoves) {
+            if (!reversesLast(m)) {
+                chosen = m;
+                break;
+            }
+        }
+    }
+
+    // Nur echte Zugbewegungen (Ziehen und Springen) merken; Setzen und Entfernen
+    // koennen nicht pendeln.
+    if (chosen.from != -1 && chosen.to != -1) {
+        lastChosen_ = chosen;
+    }
+    out = chosen;
     return true;
 }
 

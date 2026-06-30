@@ -415,7 +415,7 @@ void showTiming(const ConsoleRenderer& renderer, const Game& game,
 // Spielt eine bereits angelegte Partie bis zum Ende oder bis zum Abbruch. Misst
 // dabei die Bedenkzeit je Zug und ordnet sie dem Spieler zu, der am Zug war.
 void runGameLoop(const ConsoleRenderer& renderer, const InputParser& parser,
-                 Game& game, EventLog& eventLog, const AiPlayer* ai) {
+                 Game& game, EventLog& eventLog, AiPlayer* ai) {
     MoveTimer whiteTimer;
     MoveTimer blackTimer;
     // Zuletzt gesehene Phase je Spieler, um einen Wechsel genau einmal zu melden.
@@ -552,7 +552,7 @@ void playNewGame(const ConsoleRenderer& renderer, const InputParser& parser,
     // des Computers tatsaechlich verwendet. Er spielt Schwarz, der Mensch beginnt
     // als Weiss.
     AiPlayer computer(Color::Black, kAiDepth);
-    const AiPlayer* ai = vsComputer ? &computer : nullptr;
+    AiPlayer* ai = vsComputer ? &computer : nullptr;
 
     std::string whiteName;
     std::string blackName;

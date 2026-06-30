@@ -32,8 +32,9 @@ public:
     // Waehlt den aus KI-Sicht besten Halbzug in der aktuellen Stellung und legt
     // ihn in "out" ab. Setzt voraus, dass die KI am Zug ist. Liefert true, wenn
     // ein Zug moeglich war, und false, wenn die Partie beendet ist und es keinen
-    // Zug mehr gibt.
-    bool chooseMove(const Game& game, Move& out) const;
+    // Zug mehr gibt. Nicht const, weil sich die KI ihren letzten Zug merkt, um
+    // unter gleichwertigen Zuegen kein sinnloses Hin und Her zu spielen.
+    bool chooseMove(const Game& game, Move& out);
 
 private:
     // Minimax mit Alpha-Beta-Schnitt. Sucht bis zur Tiefe "depth" (in
@@ -45,6 +46,7 @@ private:
 
     Color color_;
     int searchDepth_;
+    Move lastChosen_;  // zuletzt gespielter Zug, fuer den Anti-Pendel-Schutz
 };
 
 } // namespace muehle

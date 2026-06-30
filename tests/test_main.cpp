@@ -139,6 +139,30 @@ TEST(Board, senkrechteMuehleZaehltUnabhaengigVonWaagerechter) {
     ASSERT_FALSE(board.formsMill(idx("a4"), Color::White));
 }
 
+TEST(Board, zaehltFastFertigeMuehle) {
+    Board board;
+    // Zwei Steine auf der Linie a7-d7-g7, drittes Feld frei: eine offene Drohung.
+    board.placeStone(idx("a7"), Color::White);
+    board.placeStone(idx("d7"), Color::White);
+    ASSERT_EQ(board.twoInLineCount(Color::White), 1);
+    // Wird die Linie vervollstaendigt, ist sie eine fertige Muehle und zaehlt
+    // nicht mehr als fast fertig.
+    board.placeStone(idx("g7"), Color::White);
+    ASSERT_EQ(board.twoInLineCount(Color::White), 0);
+}
+
+TEST(Board, fastFertigeMuehleBrauchtFreiesDrittesFeld) {
+    Board board;
+    // Zwei weisse Steine, aber das dritte Feld ist von Schwarz belegt: keine
+    // offene Drohung mehr.
+    board.placeStone(idx("a7"), Color::White);
+    board.placeStone(idx("d7"), Color::White);
+    board.placeStone(idx("g7"), Color::Black);
+    ASSERT_EQ(board.twoInLineCount(Color::White), 0);
+    // Aus schwarzer Sicht sind es ebenfalls keine zwei in einer Linie.
+    ASSERT_EQ(board.twoInLineCount(Color::Black), 0);
+}
+
 // Erste Tests auf der Phasen-Ableitung des Spielers.
 TEST(Player, startetInSetzphase) {
     Player p(Color::White, "Test");
@@ -956,10 +980,31 @@ TEST(AiPlayer, belohntMaterialvorsprungUndMuehle) {
 
     int scoreWhite = AiPlayer::evaluate(game, Color::White);
     int scoreBlack = AiPlayer::evaluate(game, Color::Black);
-    ASSERT_TRUE(scoreWhite > 0);
+    // Klarer Vorteil fuer Weiss, mindestens ein ganzer Stein Material (100), und
+    // die Bewertung ist spiegelbildlich aus schwarzer Sicht.
+    ASSERT_TRUE(scoreWhite >= 100);
     ASSERT_EQ(scoreBlack, -scoreWhite);
-    // Ein Stein Vorsprung (100) plus drei Steine in einer Muehle (3 * 8 = 24).
-    ASSERT_EQ(scoreWhite, 124);
+}
+
+TEST(AiPlayer, bewertetMuehlenaufbauHoeher) {
+    // Zwei Stellungen mit gleichem Material und ohne fertige Muehle. In der einen
+    // bilden die weissen Steine eine angefangene Muehle (a7 und d7 auf einer
+    // Linie), in der anderen nicht. Die angefangene Muehle muss hoeher bewertet
+    // werden, damit die KI auf Muehlen hinarbeitet statt ziellos zu ziehen.
+    Game withThreat("Weiss", "Schwarz");
+    place(withThreat, 0);   // Weiss a7
+    place(withThreat, 9);   // Schwarz a4
+    place(withThreat, 1);   // Weiss d7  -> zwei in einer Linie
+    place(withThreat, 12);  // Schwarz e4
+
+    Game withoutThreat("Weiss", "Schwarz");
+    place(withoutThreat, 0);   // Weiss a7
+    place(withoutThreat, 9);   // Schwarz a4
+    place(withoutThreat, 3);   // Weiss b6 -> keine gemeinsame Linie
+    place(withoutThreat, 12);  // Schwarz e4
+
+    ASSERT_TRUE(AiPlayer::evaluate(withThreat, Color::White) >
+                AiPlayer::evaluate(withoutThreat, Color::White));
 }
 
 TEST(AiPlayer, schliesstErreichbareMuehle) {
@@ -1029,6 +1074,31 @@ TEST(AiPlayer, liefertKeinenZugAmSpielende) {
     AiPlayer ai(game.currentPlayer().color(), 3);
     Move chosen;
     ASSERT_FALSE(ai.chooseMove(game, chosen));
+}
+
+TEST(AiPlayer, gewinntGegenPassivenGegner) {
+    // Sicherung gegen zielloses Hin und Her: Gegen einen Gegner, der stets seinen
+    // ersten moeglichen Zug spielt, muss die KI ihren Vorteil in einen Sieg
+    // verwandeln und darf nicht endlos pendeln. Bleibt die Partie offen, war die
+    // KI nicht zielstrebig genug.
+    Game game("Passiv", "KI");  // Weiss passiv, Schwarz = KI
+    AiPlayer ai(Color::Black, 4);
+    int ply = 0;
+    const int kMaxPly = 300;
+    while (!game.isGameOver() && ply < kMaxPly) {
+        Move m;
+        if (game.currentPlayer().color() == Color::Black) {
+            ASSERT_TRUE(ai.chooseMove(game, m));
+        } else {
+            std::vector<Move> moves = game.legalMoves();
+            ASSERT_FALSE(moves.empty());
+            m = moves.front();
+        }
+        ASSERT_TRUE(game.applyMove(m));
+        ++ply;
+    }
+    ASSERT_TRUE(game.isGameOver());
+    ASSERT_TRUE(game.winner() == Color::Black);
 }
 
 int main() {
