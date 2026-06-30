@@ -29,7 +29,20 @@ public:
     // Niederlage jede Feinbewertung ueberlagern.
     static int evaluate(const Game& game, Color perspective);
 
+    // Waehlt den aus KI-Sicht besten Halbzug in der aktuellen Stellung und legt
+    // ihn in "out" ab. Setzt voraus, dass die KI am Zug ist. Liefert true, wenn
+    // ein Zug moeglich war, und false, wenn die Partie beendet ist und es keinen
+    // Zug mehr gibt.
+    bool chooseMove(const Game& game, Move& out) const;
+
 private:
+    // Minimax mit Alpha-Beta-Schnitt. Sucht bis zur Tiefe "depth" (in
+    // Halbzuegen) und bewertet die Blattstellungen aus Sicht der KI-Farbe. Wer am
+    // Zug ist, ergibt sich aus dem Spielzustand: ist die KI am Zug, wird
+    // maximiert, sonst minimiert. Das Entfernen nach einer Muehle gehoert
+    // demselben Spieler und wird so automatisch der richtigen Seite zugerechnet.
+    int search(const Game& game, int depth, int alpha, int beta) const;
+
     Color color_;
     int searchDepth_;
 };

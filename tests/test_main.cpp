@@ -962,6 +962,75 @@ TEST(AiPlayer, belohntMaterialvorsprungUndMuehle) {
     ASSERT_EQ(scoreWhite, 124);
 }
 
+TEST(AiPlayer, schliesstErreichbareMuehle) {
+    // Weiss hat a7 und d7, der Computer ist am Zug. Der einzige Zug, der sofort
+    // eine Muehle schliesst und damit Material gewinnt, ist g7. Die Suche muss
+    // ihn finden.
+    Game game("Computer", "Mensch");
+    place(game, 0);   // Weiss a7
+    place(game, 6);   // Schwarz c5
+    place(game, 1);   // Weiss d7
+    place(game, 8);   // Schwarz e5
+    // Jetzt ist Weiss am Zug und kann mit g7 (Feld 2) die Muehle schliessen.
+    AiPlayer ai(Color::White, 3);
+    Move chosen;
+    ASSERT_TRUE(ai.chooseMove(game, chosen));
+    ASSERT_EQ(chosen.type, MoveType::Place);
+    ASSERT_EQ(chosen.to, 2);
+}
+
+TEST(AiPlayer, blockiertDrohendeMuehleDesGegners) {
+    // Schwarz droht mit a7 und d7 die Muehle auf g7 (Feld 2). Weiss hat keine
+    // eigene Muehle in einem Zug erreichbar. Die Vorausschau muss erkennen, dass
+    // Nichtblocken den Gegner im naechsten Halbzug die Muehle schliessen laesst,
+    // und deshalb selbst auf g7 setzen.
+    Game game("Computer", "Mensch");
+    place(game, 6);   // Weiss c5  (kein Muehledrohung)
+    place(game, 0);   // Schwarz a7
+    place(game, 12);  // Weiss e4  (kein Muehledrohung)
+    place(game, 1);   // Schwarz d7 -> droht g7
+    // Weiss am Zug. Mit Tiefe 2 sieht die KI den gegnerischen Muehlenschluss.
+    AiPlayer ai(Color::White, 2);
+    Move chosen;
+    ASSERT_TRUE(ai.chooseMove(game, chosen));
+    ASSERT_EQ(chosen.type, MoveType::Place);
+    ASSERT_EQ(chosen.to, 2);
+}
+
+TEST(AiPlayer, liefertKeinenZugAmSpielende) {
+    // Eine deterministische Partie zu Ende spielen (beide schliessen bevorzugt
+    // Muehlen). Am Spielende darf die KI keinen Zug mehr melden.
+    Game game("Computer", "Mensch");
+    int ply = 0;
+    const int kMaxPly = 3000;
+    while (!game.isGameOver() && ply < kMaxPly) {
+        if (game.needsRemoval()) {
+            Move r;
+            r.removed = game.removableStones().front();
+            ASSERT_TRUE(game.applyMove(r));
+            ++ply;
+            continue;
+        }
+        std::vector<Move> actions = legalActions(game);
+        ASSERT_FALSE(actions.empty());
+        Move chosen = actions.front();
+        for (const Move& cand : actions) {
+            Game probe = game;
+            probe.applyMove(cand);
+            if (probe.needsRemoval()) {
+                chosen = cand;
+                break;
+            }
+        }
+        ASSERT_TRUE(game.applyMove(chosen));
+        ++ply;
+    }
+    ASSERT_TRUE(game.isGameOver());
+    AiPlayer ai(game.currentPlayer().color(), 3);
+    Move chosen;
+    ASSERT_FALSE(ai.chooseMove(game, chosen));
+}
+
 int main() {
     return ::testing::runAll();
 }
