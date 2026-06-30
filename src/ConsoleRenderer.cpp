@@ -18,6 +18,7 @@ const char* kReset = "\033[0m";
 const char* kWhite = "\033[1;33m";  // gelb, kraeftig
 const char* kBlack = "\033[1;34m";  // blau, kraeftig
 const char* kDim = "\033[2m";       // gedaempft fuer leere Felder
+const char* kHighlight = "\033[1;36m";  // fett tuerkis fuer Hervorhebungen
 
 // Faerbt einen Stein: ein gefuellter Kreis, gelb fuer Weiss, blau fuer Schwarz.
 std::string stoneSymbol(Color c) {
@@ -52,7 +53,8 @@ const char* ConsoleRenderer::nodeGlyph(bool up, bool down, bool left, bool right
     }
 }
 
-void ConsoleRenderer::drawBoard(const Board& board) const {
+void ConsoleRenderer::drawBoard(const Board& board,
+                                const std::vector<std::string>& sidebar) const {
     // Das Brett wird auf einer festen Leinwand mit 13 Zeilen und 25 Spalten
     // gezeichnet. Jedes Feld hat eine feste Position; die Verbindungslinien
     // werden rechnerisch zwischen die Felder gesetzt. So bleibt die Ausrichtung
@@ -137,6 +139,11 @@ void ConsoleRenderer::drawBoard(const Board& board) const {
                 : stoneSymbol(c);
     }
 
+    // Abstand zwischen Brett und Infospalte und die Brettzeile, ab der die
+    // Infospalte beginnt (eine Zeile Luft oben).
+    const int sidebarGap = 4;
+    const int sidebarStart = 1;
+
     std::cout << "\n";
     for (int r = 0; r < height; ++r) {
         // Gerade Gitterzeilen tragen eine Reihen-Nummer (7 oben bis 1 unten).
@@ -147,9 +154,21 @@ void ConsoleRenderer::drawBoard(const Board& board) const {
         for (int c = 0; c < width; ++c) {
             line += cell[r][c];
         }
+        // Jede Brettzeile ist gleich breit (Prefix plus feste Zellzahl), deshalb
+        // beginnt die Infospalte nach einem festen Abstand immer buendig.
+        int infoIndex = r - sidebarStart;
+        if (infoIndex >= 0 && infoIndex < static_cast<int>(sidebar.size()) &&
+            !sidebar[static_cast<std::size_t>(infoIndex)].empty()) {
+            line += std::string(sidebarGap, ' ') +
+                    sidebar[static_cast<std::size_t>(infoIndex)];
+        }
         std::cout << line << "\n";
     }
     std::cout << "\n   a  b  c     d     e  f  g\n";
+}
+
+void ConsoleRenderer::showHighlighted(const std::string& text) const {
+    std::cout << kHighlight << text << kReset << "\n";
 }
 
 void ConsoleRenderer::showMainMenu() const {
