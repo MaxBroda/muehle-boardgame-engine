@@ -94,6 +94,24 @@ std::string moveVerb(MoveType type) {
                                        : "springt";
 }
 
+// Beschreibt einen kompletten Computerzug in einem natuerlichen Satz. Quell- und
+// Zielfeld werden ausgeschrieben, damit klar ist, von wo nach wo gezogen wurde,
+// und ein eventuelles Entfernen gehoert sichtbar zum selben Zug.
+std::string describeAiTurn(const Move& move, Field removed) {
+    std::string s = "Computer ";
+    if (move.type == MoveType::Place) {
+        s += "setzt einen Stein auf " + fieldName(move.to);
+    } else {
+        s += (move.type == MoveType::Slide ? "zieht von " : "springt von ") +
+             fieldName(move.from) + " nach " + fieldName(move.to);
+    }
+    if (removed != -1) {
+        s += " und entfernt den gegnerischen Stein auf " + fieldName(removed);
+    }
+    s += ".";
+    return s;
+}
+
 // Zeigt alle aktuell gueltigen Zuege als durchgehende Zeile.
 void showHints(const ConsoleRenderer& renderer, const Game& game) {
     std::vector<Move> moves = game.legalMoves();
@@ -372,40 +390,49 @@ void runGameLoop(const ConsoleRenderer& renderer, const InputParser& parser,
     MoveTimer whiteTimer;
     MoveTimer blackTimer;
     while (!game.isGameOver()) {
-        // Ist der Computer am Zug, waehlt er selbst. Ein Halbzug deckt sowohl
-        // einen regulaeren Zug als auch das Entfernen nach einer Muehle ab, weil
-        // legalMoves im Entfernen-Schritt die entfernbaren Steine liefert.
+        // Ist der Computer am Zug, spielt er seinen vollstaendigen Zug selbst.
+        // Schliesst der Zug eine Muehle, gehoert das Entfernen zum selben Zug und
+        // wird gemeinsam beschrieben, damit der Mensch ihn als eine Einheit
+        // nachvollziehen kann.
         Color toMove = game.currentPlayer().color();
         if (ai != nullptr && toMove == ai->color()) {
-            showSituation(renderer, game, whiteTimer, blackTimer);
-            const std::string& aiName = game.playerByColor(toMove).name();
-            bool removalStep = game.needsRemoval();
             Phase aiPhase = game.currentPlayer().currentPhase();
             auto start = std::chrono::steady_clock::now();
-            Move m;
-            if (!ai->chooseMove(game, m)) {
+            Move move;
+            if (!ai->chooseMove(game, move)) {
                 break;  // bei laufender Partie nicht zu erwarten
             }
-            game.applyMove(m);
+            game.applyMove(move);
             auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
                                std::chrono::steady_clock::now() - start)
                                .count();
-            if (removalStep) {
-                renderer.showMessage(aiName + " entfernt " +
-                                     fieldName(m.removed) + ".");
-                if (eventLog.isActive()) {
-                    eventLog.log(aiName + " entfernt " + fieldName(m.removed));
-                }
-            } else {
-                // Die Rechenzeit der KI wie einen menschlichen Zug erfassen.
-                (toMove == Color::White ? whiteTimer : blackTimer).record(elapsed);
-                renderer.showMessage(aiName + " " + moveVerb(m.type) + " " +
-                                     describeMove(m) + ".");
-                if (!game.history().empty()) {
-                    logMoveEvent(eventLog, game, toMove, aiPhase,
-                                 game.history().back(), elapsed);
+            // Die Rechenzeit wie einen menschlichen Zug erfassen.
+            (toMove == Color::White ? whiteTimer : blackTimer).record(elapsed);
+            if (eventLog.isActive() && !game.history().empty()) {
+                logMoveEvent(eventLog, game, toMove, aiPhase,
+                             game.history().back(), elapsed);
+            }
+
+            // Schliesst der Zug eine Muehle, im selben Schritt den entfernten
+            // Stein bestimmen und entfernen.
+            Field removed = -1;
+            if (game.needsRemoval()) {
+                Move removal;
+                if (ai->chooseMove(game, removal)) {
+                    game.applyMove(removal);
+                    removed = game.history().back().removed;
+                    if (eventLog.isActive()) {
+                        eventLog.log(game.playerByColor(toMove).name() +
+                                     " entfernt " + fieldName(removed));
+                    }
                 }
             }
+
+            // Nur den Zug in Worten ausgeben. Die Endstellung zeichnet die
+            // naechste Situationsanzeige (oder der Endstand); so wird jede
+            // Stellung genau einmal gezeichnet und nichts flackert.
+            renderer.showMessage("");
+            renderer.showMessage(describeAiTurn(move, removed));
             continue;
         }
         if (game.needsRemoval()) {
