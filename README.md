@@ -31,8 +31,10 @@ ctest --test-dir build      # Tests über CTest ausführen
 
 Das Hauptmenü bietet neues Spiel, Spielstand fortsetzen, Protokoll wiedergeben,
 spielübergreifende Statistik und Beenden. Beim neuen Spiel lässt sich wählen, ob
-ein zweiter Mensch oder der Computer der Gegner ist. Der Computer spielt Schwarz,
-der Mensch beginnt als Weiß. Während eines Zuges sind möglich:
+ein zweiter Mensch oder der Computer der Gegner ist. Gegen den Computer wird
+zusätzlich die Schwierigkeit gewählt (Leicht, Mittel, Schwer), die sich aus
+Suchtiefe und einer Fehlerquote ergibt. Der Computer spielt Schwarz, der Mensch
+beginnt als Weiß. Während eines Zuges sind möglich:
 
 - ein Feld zum Setzen (z.B. `d3`) oder ein Zug `von-nach` (z.B. `a1-a4`)
 - `h` zeigt alle aktuell gültigen Züge an (Hinweis-Modus)
@@ -54,5 +56,6 @@ geschützt und nur über einen Pull Request mit grüner Pipeline erreichbar.
 Phase 2 mit den Sprints A bis H umgesetzt: vollständige Spiellogik, Protokoll mit
 Speichern, Fortsetzen und Wiedergabe, Box-Drawing-Spielfeld sowie die
 Zusatzfeatures Undo, Hinweis-Modus, Statistik, Zugdauer-Messung, optionales
-Logging und ein KI-Gegner über eine Minimax-Suche mit Alpha-Beta-Schnitt. Der
-weitere Plan und der aktuelle Fortschritt stehen in `Uebergabe_Phase2.md`.
+Logging und ein KI-Gegner über eine Minimax-Suche mit Alpha-Beta-Schnitt in drei
+Schwierigkeitsstufen. Der weitere Plan und der aktuelle Fortschritt stehen in
+`Uebergabe_Phase2.md`.

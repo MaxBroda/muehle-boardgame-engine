@@ -1076,6 +1076,34 @@ TEST(AiPlayer, liefertKeinenZugAmSpielende) {
     ASSERT_FALSE(ai.chooseMove(game, chosen));
 }
 
+TEST(AiPlayer, begrenztFehlerquoteAufGueltigenBereich) {
+    // Werte ausserhalb 0..100 werden auf den Rand gezogen.
+    AiPlayer tooHigh(Color::White, 2, 150);
+    AiPlayer tooLow(Color::White, 2, -10);
+    AiPlayer normal(Color::White, 2, 30);
+    ASSERT_EQ(tooHigh.blunderPercent(), 100);
+    ASSERT_EQ(tooLow.blunderPercent(), 0);
+    ASSERT_EQ(normal.blunderPercent(), 30);
+}
+
+TEST(AiPlayer, zufallszugBleibtImmerGueltig) {
+    // Bei voller Fehlerquote spielt die KI stets zufaellig. Egal welcher Zug
+    // gewaehlt wird, er muss regelkonform sein. Mehrfach pruefen, weil der Zug
+    // zufaellig ist.
+    AiPlayer ai(Color::White, 2, 100);
+    for (int i = 0; i < 40; ++i) {
+        Game game("Weiss", "Schwarz");
+        place(game, 0);   // Weiss a7
+        place(game, 9);   // Schwarz a4
+        place(game, 1);   // Weiss d7
+        place(game, 12);  // Schwarz e4
+        Move chosen;
+        ASSERT_TRUE(ai.chooseMove(game, chosen));
+        std::string reason;
+        ASSERT_TRUE(game.validateMove(chosen, reason));
+    }
+}
+
 TEST(AiPlayer, gewinntGegenPassivenGegner) {
     // Sicherung gegen zielloses Hin und Her: Gegen einen Gegner, der stets seinen
     // ersten moeglichen Zug spielt, muss die KI ihren Vorteil in einen Sieg

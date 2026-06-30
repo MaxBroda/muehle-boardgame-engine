@@ -548,10 +548,33 @@ void playNewGame(const ConsoleRenderer& renderer, const InputParser& parser,
     std::string opp = renderer.promptInput();
     bool vsComputer = (opp == "2");
 
+    // Schwierigkeitsgrad nur abfragen, wenn gegen den Computer gespielt wird.
+    // Tiefe und Fehlerquote ergeben zusammen die Spielstaerke.
+    int depth = kAiDepth;
+    int blunder = 0;
+    std::string level;
+    if (vsComputer) {
+        renderer.showMessage("Schwierigkeit: 1) Leicht  2) Mittel  3) Schwer");
+        std::string choice = renderer.promptInput();
+        if (choice == "1") {
+            depth = 1;
+            blunder = 50;
+            level = "Leicht";
+        } else if (choice == "3") {
+            depth = kAiDepth;
+            blunder = 0;
+            level = "Schwer";
+        } else {
+            depth = 3;
+            blunder = 15;
+            level = "Mittel";  // Standard bei leerer oder ungueltiger Eingabe
+        }
+    }
+
     // Der KI-Gegner wird immer angelegt (das kostet nichts), aber nur bei Wahl
     // des Computers tatsaechlich verwendet. Er spielt Schwarz, der Mensch beginnt
     // als Weiss.
-    AiPlayer computer(Color::Black, kAiDepth);
+    AiPlayer computer(Color::Black, depth, blunder);
     AiPlayer* ai = vsComputer ? &computer : nullptr;
 
     std::string whiteName;
@@ -559,6 +582,7 @@ void playNewGame(const ConsoleRenderer& renderer, const InputParser& parser,
     if (vsComputer) {
         whiteName = askName(renderer, "Spieler (Weiss)");
         blackName = "Computer";
+        renderer.showMessage("Computer-Schwierigkeit: " + level + ".");
     } else {
         whiteName = askName(renderer, "Spieler 1 (Weiss)");
         blackName = askName(renderer, "Spieler 2 (Schwarz)");
@@ -566,7 +590,8 @@ void playNewGame(const ConsoleRenderer& renderer, const InputParser& parser,
     if (eventLog.isActive()) {
         eventLog.log("Neue Partie: " + whiteName + " (Weiss) gegen " + blackName +
                      " (Schwarz)" +
-                     (vsComputer ? ", Computer spielt Schwarz" : ""));
+                     (vsComputer ? ", Computer spielt Schwarz (" + level + ")"
+                                 : ""));
     }
     Game game(whiteName, blackName);
     runGameLoop(renderer, parser, game, eventLog, ai);

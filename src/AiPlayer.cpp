@@ -1,5 +1,6 @@
 #include "AiPlayer.h"
 
+#include <random>
 #include <vector>
 
 #include "Board.h"
@@ -35,8 +36,13 @@ constexpr int kMobilityWeight = 1;
 
 } // namespace
 
-AiPlayer::AiPlayer(Color color, int searchDepth)
-    : color_(color), searchDepth_(searchDepth < 1 ? 1 : searchDepth) {
+AiPlayer::AiPlayer(Color color, int searchDepth, int blunderPercent)
+    : color_(color),
+      searchDepth_(searchDepth < 1 ? 1 : searchDepth),
+      blunderPercent_(blunderPercent < 0 ? 0
+                      : (blunderPercent > 100 ? 100 : blunderPercent)),
+      lastChosen_(),
+      rng_(std::random_device{}()) {
 }
 
 Color AiPlayer::color() const {
@@ -45,6 +51,10 @@ Color AiPlayer::color() const {
 
 int AiPlayer::searchDepth() const {
     return searchDepth_;
+}
+
+int AiPlayer::blunderPercent() const {
+    return blunderPercent_;
 }
 
 int AiPlayer::evaluate(const Game& game, Color perspective) {
@@ -146,6 +156,17 @@ bool AiPlayer::chooseMove(const Game& game, Move& out) {
                 chosen = m;
                 break;
             }
+        }
+    }
+
+    // Schwierigkeitsgrad: mit der eingestellten Wahrscheinlichkeit absichtlich
+    // einen zufaelligen gueltigen Zug statt des besten spielen. So wird die KI
+    // schwaecher und damit fuer Menschen schlagbar.
+    if (blunderPercent_ > 0) {
+        std::uniform_int_distribution<int> percent(1, 100);
+        if (percent(rng_) <= blunderPercent_) {
+            std::uniform_int_distribution<std::size_t> pick(0, moves.size() - 1);
+            chosen = moves[pick(rng_)];
         }
     }
 

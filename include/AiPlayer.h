@@ -1,5 +1,7 @@
 #pragma once
 
+#include <random>
+
 #include "Game.h"
 #include "Move.h"
 #include "Types.h"
@@ -13,13 +15,18 @@ namespace muehle {
 // Spiels ueber dieselbe zentrale Validierung wie ein menschlicher Zug.
 class AiPlayer {
 public:
-    // color:       die Farbe, die die KI spielt.
-    // searchDepth: Suchtiefe in Halbzuegen (mindestens 1). Groesser bedeutet
-    //              staerker, aber langsamer. Werte unter 1 werden auf 1 gehoben.
-    AiPlayer(Color color, int searchDepth);
+    // color:          die Farbe, die die KI spielt.
+    // searchDepth:    Suchtiefe in Halbzuegen (mindestens 1). Groesser bedeutet
+    //                 staerker, aber langsamer. Werte unter 1 werden auf 1 gehoben.
+    // blunderPercent: Wahrscheinlichkeit in Prozent, statt des besten Zugs einen
+    //                 zufaelligen gueltigen Zug zu spielen. So laesst sich die
+    //                 Spielstaerke senken. 0 heisst immer bestmoeglich; der Wert
+    //                 wird auf den Bereich 0..100 begrenzt.
+    AiPlayer(Color color, int searchDepth, int blunderPercent = 0);
 
     Color color() const;
     int searchDepth() const;
+    int blunderPercent() const;
 
     // Bewertet eine Stellung aus Sicht von "perspective". Ein positiver Wert ist
     // gut fuer perspective, ein negativer gut fuer den Gegner. Die Bewertung
@@ -46,7 +53,9 @@ private:
 
     Color color_;
     int searchDepth_;
-    Move lastChosen_;  // zuletzt gespielter Zug, fuer den Anti-Pendel-Schutz
+    int blunderPercent_;
+    Move lastChosen_;        // zuletzt gespielter Zug, fuer den Anti-Pendel-Schutz
+    std::mt19937 rng_;       // Zufallsquelle fuer absichtliche Fehlzuege
 };
 
 } // namespace muehle
