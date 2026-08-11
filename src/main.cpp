@@ -38,6 +38,10 @@ const char* kSavesDir = "data";
 // und Muehlen vorzubereiten, und auch ohne optimierten Build sofort spielbar.
 const int kAiDepth = 4;
 
+const char* kAnsiWhite = "\033[1;33m";
+const char* kAnsiBlack = "\033[1;34m";
+const char* kAnsiReset = "\033[0m";
+
 // Ausgang eines Zug-Dialogs.
 enum class Turn { Applied, Undone, Quit, EndOfInput };
 
@@ -238,17 +242,22 @@ std::vector<std::string> buildSidebar(const Game& game, const MoveTimer& whiteTi
                std::to_string(p.stonesOnBoard());
     };
 
+    auto colored = [](const std::string& name, Color c) {
+        const char* ansi = (c == Color::White) ? kAnsiWhite : kAnsiBlack;
+        return std::string(ansi) + name + kAnsiReset;
+    };
+
     std::vector<std::string> s;
-    s.push_back("Am Zug: " + game.playerByColor(toMove).name() + " (" +
-                colorName(toMove) + ")");
+    s.push_back("Am Zug: " + colored(game.playerByColor(toMove).name(), toMove) +
+                " (" + colorName(toMove) + ")");
     s.push_back("");
     s.push_back("Bedenkzeit (letzter Zug)");
-    s.push_back("  " + pad(white.name()) + "  " + lastTime(whiteTimer));
-    s.push_back("  " + pad(black.name()) + "  " + lastTime(blackTimer));
+    s.push_back("  " + colored(pad(white.name()), Color::White) + "  " + lastTime(whiteTimer));
+    s.push_back("  " + colored(pad(black.name()), Color::Black) + "  " + lastTime(blackTimer));
     s.push_back("");
     s.push_back("Steine (Hand / Brett)");
-    s.push_back("  " + pad(white.name()) + "  " + stones(white));
-    s.push_back("  " + pad(black.name()) + "  " + stones(black));
+    s.push_back("  " + colored(pad(white.name()), Color::White) + "  " + stones(white));
+    s.push_back("  " + colored(pad(black.name()), Color::Black) + "  " + stones(black));
     return s;
 }
 
