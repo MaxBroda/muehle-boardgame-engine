@@ -172,7 +172,7 @@ void ConsoleRenderer::showHighlighted(const std::string& text) const {
 }
 
 void ConsoleRenderer::showMainMenu() const {
-    std::cout << "========= MUEHLE =========\n";
+    std::cout << kHighlight << "========= MUEHLE =========" << kReset << "\n";
     std::cout << "  1) Neues Spiel\n";
     std::cout << "  2) Spielstand fortsetzen\n";
     std::cout << "  3) Protokoll wiedergeben\n";
