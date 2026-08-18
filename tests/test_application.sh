@@ -353,6 +353,27 @@ test_undo_gegen_computer() {
     assert_contains "Computerzug zurueckgenommen"  "$nach_undo" "Computer.*9 / 0"
 }
 
+# ---------- T22: Spielstand gegen den Computer fortsetzen ----------
+test_fortsetzen_gegen_computer() {
+    cyan "T22: Spielstand gegen den Computer fortsetzen"
+    local out
+    setup_data_dir
+    # Das Protokoll haelt die KI nicht fest, nur den Spielernamen "Computer".
+    # Beim Fortsetzen muss das Programm nachfragen und den Gegner auf Wunsch
+    # wiederherstellen, sonst spielt der Mensch unbemerkt beide Farben weiter.
+    printf '1\n2\n3\nTester\nd1\nq\nj\nki-stand\n5\n' | "$MUEHLE" > /dev/null 2>&1
+
+    out=$(printf '2\ndata/ki-stand.txt\nj\n3\ng7\nq\nn\n5\n' | "$MUEHLE" 2>&1)
+    assert_contains "Nachfrage erscheint" "$out" "gegen den Computer gespielt"
+    assert_contains "Computer zieht wieder" "$out" "Computer setzt"
+
+    # Wer verneint, spielt bewusst zu zweit weiter; dann darf die KI nicht ziehen.
+    out=$(printf '2\ndata/ki-stand.txt\nn\nq\nn\n5\n' | "$MUEHLE" 2>&1)
+    assert_contains "Hinweis auf Zwei-Personen-Modus" "$out" "Weiter zu zweit"
+    assert_not_contains "Kein Computerzug"           "$out" "Computer setzt"
+    teardown_data_dir
+}
+
 # ========== Ausfuehrung ==========
 cyan "========================================"
 cyan "  Muehle Anwendungstests (End-to-End)"
@@ -380,6 +401,7 @@ test_logging
 test_fortsetzen_leer
 test_wiedergabe_leer
 test_undo_gegen_computer
+test_fortsetzen_gegen_computer
 
 echo ""
 cyan "========================================"
