@@ -542,6 +542,14 @@ void runGameLoop(const ConsoleRenderer& renderer, const InputParser& parser,
             renderer.showMessage("Zurueck zum Hauptmenue.");
             return;
         }
+        // Gegen den Computer gehoert dessen Antwortzug zum Undo dazu.
+        // handleMove nimmt nur einen Halbzug zurueck, und das ist hier immer der
+        // Zug der KI. Ohne den zweiten Schritt waere sie sofort wieder am Zug,
+        // wuerde meist dasselbe Feld waehlen und der eigene Zug bliebe stehen.
+        // Das Undo saehe dann wirkungslos aus.
+        if (result == Turn::Undone && ai != nullptr && !game.history().empty()) {
+            game.undoLastMove();
+        }
         // Nur ein tatsaechlich ausgefuehrter Zug zaehlt; ein Undo nicht.
         if (result == Turn::Applied) {
             (mover == Color::White ? whiteTimer : blackTimer).record(elapsed);
