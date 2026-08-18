@@ -157,9 +157,13 @@ test_hinweis() {
 # ---------- T11: Undo ----------
 test_undo() {
     cyan "T11: Undo eines Zugs"
-    local out
-    out=$(printf '1\n1\nA\nB\nd1\nu\nq\nn\n5\n' | "$MUEHLE" 2>&1)
+    local out nach_undo
+    out=$(printf '1\n1\nAnna\nBert\nd1\nu\nq\nn\n5\n' | "$MUEHLE" 2>&1)
     assert_contains "Undo bestaetigt" "$out" "zurueckgenommen"
+    # Die Meldung allein genuegt nicht: nach dem Undo muss der Stein wieder in
+    # der Hand liegen. Geprueft wird nur die Ausgabe nach der Meldung.
+    nach_undo=$(echo "$out" | sed -n '/zurueckgenommen/,$p')
+    assert_contains "Stein zurueck in der Hand" "$nach_undo" "Anna.*9 / 0"
 }
 
 # ---------- T12: Undo ohne Zug ----------
@@ -335,6 +339,20 @@ test_wiedergabe_leer() {
     teardown_data_dir
 }
 
+# ---------- T21: Undo gegen den Computer ----------
+test_undo_gegen_computer() {
+    cyan "T21: Undo gegen den Computer"
+    local out nach_undo
+    # Gegen die KI muss ein Undo den eigenen Zug UND die Antwort des Computers
+    # zuruecknehmen. Sonst ist die KI sofort wieder am Zug, waehlt meist dasselbe
+    # Feld, und das Undo bleibt wirkungslos, obwohl die Meldung erscheint.
+    out=$(printf '1\n2\n3\nTester\nd1\nu\nq\nn\n5\n' | "$MUEHLE" 2>&1)
+    assert_contains "Undo bestaetigt" "$out" "zurueckgenommen"
+    nach_undo=$(echo "$out" | sed -n '/zurueckgenommen/,$p')
+    assert_contains "Eigener Zug zurueckgenommen"  "$nach_undo" "Tester.*9 / 0"
+    assert_contains "Computerzug zurueckgenommen"  "$nach_undo" "Computer.*9 / 0"
+}
+
 # ========== Ausfuehrung ==========
 cyan "========================================"
 cyan "  Muehle Anwendungstests (End-to-End)"
@@ -361,6 +379,7 @@ test_ki_schwierigkeitsgrade
 test_logging
 test_fortsetzen_leer
 test_wiedergabe_leer
+test_undo_gegen_computer
 
 echo ""
 cyan "========================================"
