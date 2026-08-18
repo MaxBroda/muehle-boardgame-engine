@@ -38,6 +38,11 @@ const char* kSavesDir = "data";
 // und Muehlen vorzubereiten, und auch ohne optimierten Build sofort spielbar.
 const int kAiDepth = 4;
 
+// Unter diesem Namen tritt der Computergegner an. Die Konstante wird sowohl beim
+// Anlegen einer Partie als auch beim Fortsetzen eines Spielstands verwendet, wo
+// sie verraet, dass Schwarz von der KI gesteuert wurde.
+const char* kComputerName = "Computer";
+
 const char* kAnsiWhite = "\033[1;33m";
 const char* kAnsiBlack = "\033[1;34m";
 const char* kAnsiReset = "\033[0m";
@@ -582,6 +587,27 @@ void runGameLoop(const ConsoleRenderer& renderer, const InputParser& parser,
 }
 
 // Menuepunkt 1: neue Partie.
+// Fragt die Schwierigkeitsstufe ab und setzt Suchtiefe und Fehlerquote. Beide
+// zusammen ergeben die Spielstaerke. Liefert den Namen der Stufe zurueck.
+std::string askDifficulty(const ConsoleRenderer& renderer, int& depth,
+                          int& blunder) {
+    renderer.showMessage("Schwierigkeit: 1) Leicht  2) Mittel  3) Schwer");
+    std::string choice = renderer.promptInput();
+    if (choice == "1") {
+        depth = 1;
+        blunder = 50;
+        return "Leicht";
+    }
+    if (choice == "3") {
+        depth = kAiDepth;
+        blunder = 0;
+        return "Schwer";
+    }
+    depth = 3;
+    blunder = 15;
+    return "Mittel";  // Standard bei leerer oder ungueltiger Eingabe
+}
+
 void playNewGame(const ConsoleRenderer& renderer, const InputParser& parser,
                  EventLog& eventLog) {
     renderer.showMessage("Gegner waehlen: 1) zweiter Mensch  2) Computer");
@@ -594,21 +620,7 @@ void playNewGame(const ConsoleRenderer& renderer, const InputParser& parser,
     int blunder = 0;
     std::string level;
     if (vsComputer) {
-        renderer.showMessage("Schwierigkeit: 1) Leicht  2) Mittel  3) Schwer");
-        std::string choice = renderer.promptInput();
-        if (choice == "1") {
-            depth = 1;
-            blunder = 50;
-            level = "Leicht";
-        } else if (choice == "3") {
-            depth = kAiDepth;
-            blunder = 0;
-            level = "Schwer";
-        } else {
-            depth = 3;
-            blunder = 15;
-            level = "Mittel";  // Standard bei leerer oder ungueltiger Eingabe
-        }
+        level = askDifficulty(renderer, depth, blunder);
     }
 
     // Der KI-Gegner wird immer angelegt (das kostet nichts), aber nur bei Wahl
@@ -621,7 +633,7 @@ void playNewGame(const ConsoleRenderer& renderer, const InputParser& parser,
     std::string blackName;
     if (vsComputer) {
         whiteName = askName(renderer, "Spieler (Weiss)");
-        blackName = "Computer";
+        blackName = kComputerName;
         renderer.showMessage("Computer-Schwierigkeit: " + level + ".");
     } else {
         whiteName = askName(renderer, "Spieler 1 (Weiss)");
@@ -662,9 +674,31 @@ void continueGame(const ConsoleRenderer& renderer, const InputParser& parser,
         eventLog.log("Spielstand fortgesetzt: " + whiteName + " gegen " +
                      blackName);
     }
-    // Ein fortgesetzter Spielstand wird von zwei Menschen weitergespielt; das
-    // Dateiformat haelt keine KI-Information fest.
-    runGameLoop(renderer, parser, game, eventLog, nullptr);
+    // Das Protokoll haelt nicht fest, ob Schwarz von der KI gesteuert wurde. Der
+    // Spielername verraet es aber, denn eine Partie gegen den Computer benennt
+    // Schwarz immer so. Ohne Nachfrage fiele die Partie hier still in den
+    // Zwei-Personen-Modus: die Infospalte zeigte weiter "Am Zug: Computer",
+    // waehrend das Programm auf eine Eingabe wartet. Die Schwierigkeitsstufe ist
+    // eine Eigenschaft der Sitzung und steht bewusst nicht in der Datei, sie wird
+    // deshalb neu abgefragt.
+    bool vsComputer = false;
+    int depth = kAiDepth;
+    int blunder = 0;
+    if (blackName == kComputerName) {
+        renderer.showMessage("Dieser Spielstand wurde gegen den Computer gespielt.");
+        renderer.showMessage("Gegen den Computer weiterspielen? (j/n)");
+        std::string answer = renderer.promptInput();
+        vsComputer = (answer != "n" && answer != "nein" && answer != "N");
+        if (vsComputer) {
+            std::string level = askDifficulty(renderer, depth, blunder);
+            renderer.showMessage("Computer-Schwierigkeit: " + level + ".");
+        } else {
+            renderer.showMessage("Weiter zu zweit, Schwarz wird von Hand gespielt.");
+        }
+    }
+    AiPlayer computer(Color::Black, depth, blunder);
+    runGameLoop(renderer, parser, game, eventLog,
+                vsComputer ? &computer : nullptr);
 }
 
 // Haengt Leerzeichen an, bis der Text die gewuenschte Breite hat. Fuer eine
